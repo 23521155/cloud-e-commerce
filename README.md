@@ -10,9 +10,9 @@ A full-stack e-commerce platform with a product recommendation service, built an
 flowchart LR
     User((User)) -->|HTTPS| Web
 
-    subgraph Azure["Azure Container Apps Environment"]
-        Web["web<br/>Next.js fullstack<br/>(external ingress)"]
-        Rec["recommender<br/>FastAPI<br/>(internal ingress)"]
+    subgraph Azure["Azure App Service"]
+        Web["web<br/>Next.js fullstack<br/>(public)"]
+        Rec["recommender<br/>FastAPI<br/>(internal only)"]
     end
 
     Web -->|REST| Rec
@@ -24,11 +24,11 @@ flowchart LR
     AI --> LA[Log Analytics]
     LA --> Alerts[Azure Monitor Alerts]
 
-    ACR[Azure Container Registry] -.images.-> Azure
+    ACR[Azure Container Registry] -.image.-> Rec
 ```
 
 - **web** — storefront, admin dashboard and backend API (Next.js Route Handlers). The only public entry point.
-- **recommender** — generates product recommendations from user behavior. Only reachable from inside the Container Apps environment.
+- **recommender** — generates product recommendations from user behavior. Not meant to be reachable from the public internet; only the web app calls it.
 - **Azure SQL Database** — single shared database for both services.
 
 ## Tech stack
@@ -39,7 +39,7 @@ flowchart LR
 | ORM | Prisma 7 with `@prisma/adapter-mssql` |
 | Recommender | Python, FastAPI, SQLAlchemy, pandas, scikit-learn |
 | Database | Azure SQL Database (SQL Server, serverless tier) |
-| Hosting | Azure Container Apps, Azure Container Registry |
+| Hosting | Azure App Service (Web Apps); Azure Container Registry for the recommender image |
 | Monitoring | Application Insights, Log Analytics, Azure Monitor Alerts |
 | Infrastructure as Code | Bicep |
 | CI/CD | GitHub Actions |
