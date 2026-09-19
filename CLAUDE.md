@@ -64,8 +64,6 @@ Recommender (run in `apps/recommender`, once implemented): `uvicorn app.main:app
 
 ## Environment
 
-- Owner's machine: Windows 11, PowerShell, WebStorm. Docker and Azure CLI are not installed yet.
-- `D:\` itself is also a git repository; this project has its own nested repo at `D:\cloud-e-commerce`. Always run git inside the project folder.
 - Never commit `.env` files, `node_modules`, or `*.log`. Only `.env.example` files are committed.
 
 ## Working rules
