@@ -25,6 +25,7 @@ overlap much. The brief names Azure services; the rubric scores deliverables. Sa
 |---|---|
 | [`references/scalable-ecommerce-web-app.md`](./references/scalable-ecommerce-web-app.md) | Verbatim copy of the Azure article `project.md` cites; Microsoft deleted the original |
 | [`references/scalable-ecommerce-web-app.png`](./references/scalable-ecommerce-web-app.png) | The architecture diagram. **Embedded in `project.md`, so it is part of the brief** |
+| [`references/scalable-ecommerce-web-app.vsdx`](./references/scalable-ecommerce-web-app.vsdx) | Editable Visio source of that diagram |
 
 ## Not in this repository
 
