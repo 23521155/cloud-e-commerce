@@ -39,3 +39,8 @@ Các dịch vụ cần thực hiện:
 ## Tài liệu tham khảo
 
 <https://learn.microsoft.com/en-us/azure/architecture/solution-ideas/articles/scalable-ecommerce-web-app>
+
+**Lưu ý:** Microsoft đã gỡ bài này, link trên hiện redirect về
+[Basic web application](https://learn.microsoft.com/en-us/azure/architecture/web-apps/app-service/architectures/basic-web-app),
+một bài khác hẳn. Nguyên văn bài gốc đã được lưu lại tại
+[Architect scalable e-commerce web app](./references/scalable-ecommerce-web-app.md).
