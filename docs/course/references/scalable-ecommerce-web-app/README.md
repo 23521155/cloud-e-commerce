@@ -10,6 +10,7 @@
 > | Bị xoá tại commit | [`c41cf98`](https://github.com/MicrosoftDocs/architecture-center/commit/c41cf9855a6b9d6db6bd4e1c8fd145c8e45629ae) — `"delete and redirect articles"` |
 > | Nguồn nội dung dưới đây | `docs/web-apps/idea/scalable-ecommerce-web-app-content.md` tại commit [`2e54c95`](https://github.com/MicrosoftDocs/architecture-center/tree/2e54c953b88313030cbc5112a795f9244069afa1) (bản cuối trước khi xoá) |
 > | Redirect hiện tại | → [Basic web application](https://learn.microsoft.com/en-us/azure/architecture/web-apps/app-service/architectures/basic-web-app) với `redirect_document_id: false`, tức **không phải bài thay thế tương đương** |
+> | Sơ đồ nguồn | [`architecture.vsdx`](./architecture.vsdx) — bản Visio tải từ link "Download a Visio file" bên dưới, khớp với ảnh PNG. |
 
 Build scalable e-commerce web apps with Azure Functions and Web Apps, so you can create personalized experiences while Azure takes care of the infrastructure. This solution is ideal for the retail industry.
 
