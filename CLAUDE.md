@@ -15,6 +15,7 @@ University course project (đồ án): an e-commerce platform with a recommendat
 | Repo layout | Monorepo: `apps/web`, `apps/recommender`, `infra` | One repo for code, IaC and CI |
 | Web | Next.js fullstack (UI + Route Handlers as backend) | No separate Node backend |
 | Recommender | FastAPI (Python) separate service | ML ecosystem |
+| Functions | Azure Functions v4, Node.js/TypeScript, in `apps/functions` | Event-driven workloads; independently deployable from the web app |
 | Database | Azure SQL Database, serverless tier, shared by both services | Required: SQL Server on Azure; serverless is cheap |
 | ORM (web) | Prisma 7 + `@prisma/adapter-mssql` | SQL Server support, migrations |
 | DB access (recommender) | SQLAlchemy + pyodbc (ODBC Driver 18) | Reads same DB |
@@ -39,6 +40,7 @@ apps/web/            Next.js 16 app (src/ dir, App Router, Tailwind 4, alias @/*
   src/app/api        Route Handlers
   src/lib            prisma client singleton, auth, recommender client
 apps/recommender/    FastAPI: app/{api,core,db,schemas,services,ml}, tests/, notebooks/
+apps/functions/      Azure Functions v4 (Node.js/TypeScript); function registrations under src/functions/
 infra/               Bicep: main.bicep, modules/, parameters/
 .github/workflows/   CI (lint/test/build) and deploy pipelines
 docs/                architecture notes and course report
@@ -53,6 +55,11 @@ Web (run in `apps/web`):
 - `postinstall` runs `prisma generate`
 
 Recommender (run in `apps/recommender`, once implemented): `uvicorn app.main:app --reload`, `pytest`, `ruff check .`
+
+Functions (run in `apps/functions`):
+- `npm start` runs `clean` + `build` + `func start` (host on `http://localhost:7071`)
+- `func new --template "<template>" --name <name>` adds a function; `func templates list` lists templates
+- Core Tools: `npm i -g azure-functions-core-tools@4`
 
 ## Version gotchas — check docs, not memory
 
