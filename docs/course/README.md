@@ -20,6 +20,33 @@ bài*, and is not part of the brief.
 they overlap: the coursework would be this application deployed and monitored, rather than a separate
 one. Whether that holds up is still open.
 
+### The brief's technology and platform lists are a choice
+
+`project.md` lists *"Triển khai trên các công nghệ: .NET, Java, Node.js, PHP và Python"* and
+*"Triển khai trên các platform: Windows, Linux"*. Asked about those two lists, the lecturer ruled
+that the technology list is one to pick from and that deploying on a single platform is enough. That
+ruling is relayed from memory, not quoted.
+
+The same holds for the coursework. Asked whether `coursework.md`'s *"ASP.NET Core app"* was binding,
+he replied:
+
+> Dùng công nghệ gì cũng được nha em - này là web. Em chọn java, PHP, ...
+
+### The reference article was deleted
+
+Microsoft deleted the article `project.md` cites. Its URL now redirects to *Basic web application*, a
+starter App Service + SQL Database + Application Insights architecture that has neither the Azure
+Functions nor the Redis `project.md` requires. The original was found in the
+`MicrosoftDocs/architecture-center` Git history and kept at
+[`references/scalable-ecommerce-web-app/`](./references/scalable-ecommerce-web-app/README.md). The
+lecturer has confirmed that recovered original is the one to follow — relayed from memory, not
+quoted.
+
+**Suggestion, not a decision:** build every service that diagram shows — Azure Content Delivery
+Network, multi-factor authentication, Search, Blob Storage, Queue Storage, Application Insights and
+a third-party payment step — even though the brief's text names none of them. The diagram is part of
+the brief, so building them is the safe reading, and they are worth building anyway.
+
 ### Neither rubric was written specifically for this topic
 
 Each grades every topic in its own pool:
@@ -38,28 +65,13 @@ processing-flow criterion is *"Web — luồng đi dữ liệu, logic của tran
 
 One criterion is graded on a ladder rather than pass/fail: `rubric-coursework.csv` 1.2 and
 `rubric-project.csv` 1.3 are written as `điểm-đơn vị`, so the score scales with the order of magnitude
-of the data processed — byte → kB → MB → GB, with GB the top rung.
+of the data processed — byte → kB → MB → GB. Asked about it, the lecturer replied:
 
-### Open questions for the lecturer
+> Chủ đề của em liên quan đến web, nên so sánh trên database, số lượng bảng, số lượng record trong
+> table (crawl data về chứ không phải clone data - vài chục row - 0.25; vài trăm 0.5; vài nghìn
+> 0.75; vài chục nghìn 1.0đ)
 
-- **The technology and platform lists.** `project.md` lists *"Triển khai trên các công nghệ: .NET,
-  Java, Node.js, PHP và Python"* and *"Triển khai trên các platform: Windows, Linux"*, and the Điều
-  kiện section mentions *"Java & PHP & Script"*. Unresolved whether these are options to pick from or
-  lists to satisfy in full.
-- **ASP.NET Core in the lab.** `coursework.md`'s lab description deploys *"an ASP.NET Core app"*.
-  Unresolved whether that stack is required or only the lab's example app.
-- **`>4GB`**, in `rubric-coursework.csv` 1.2 and `rubric-project.csv` 1.3. The criterion is titled
-  *"Kích thước dữ liệu - dung lượng bộ nhớ cho xử lý"* — two things — so it is most likely a memory
-  spec rather than a rung of the ladder above.
-- **The reference article is gone.** Microsoft deleted the article `project.md` cites; its URL now
-  redirects to *Basic web application*, a starter App Service + SQL Database + Application Insights
-  architecture with neither the Azure Functions nor the Redis that `project.md` requires. The
-  original was found in the `MicrosoftDocs/architecture-center` Git history
-  ([`references/scalable-ecommerce-web-app/`](./references/scalable-ecommerce-web-app/README.md)).
-  Unresolved whether to follow the original or the current page — and if the original, whether the
-  services its diagram shows but the brief's text never names (Azure Content Delivery Network,
-  multi-factor authentication, Search, Blob Storage, Queue Storage, Application Insights, a
-  third-party payment step) are required or only illustrative.
+The question also asked what the `>4GB` printed beside “Kích thước dữ liệu - dung lượng bộ nhớ cho xử lý” means — but the reply did not address it.
 
 ## Reference only
 

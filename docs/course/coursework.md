@@ -1,6 +1,6 @@
 # Deploying And Monitoring Azure App Service Web Apps — So sánh công cụ của Azure với Third Party
 
-> **Ghi chú của nhóm — không thuộc đề bài.** Đề tài được chọn từ [trang lịch học](https://sites.google.com/uit.edu.vn/cloudcomputing/schedule), Week 7. Phần yêu cầu chi tiết kèm theo không đề cập đến nội dung "So sánh công cụ của Azure với Third Party". Vì vậy, phạm vi so sánh (công cụ và tiêu chí) cần được làm rõ với giảng viên; nếu không có hướng dẫn bổ sung thì phải tự xác định.
+> **Ghi chú của nhóm — không thuộc đề bài.** Đề tài được chọn từ [trang lịch học](https://sites.google.com/uit.edu.vn/cloudcomputing/schedule), Week 7. Phần yêu cầu chi tiết kèm theo không đề cập đến nội dung "So sánh công cụ của Azure với Third Party". Hỏi thầy *"Cần so sánh với khoảng bao nhiêu Third Party và theo các tiêu chí nào? Phần so sánh chỉ cần trình bày lý thuyết và số liệu, hay phải triển khai thực nghiệm luôn? Nếu cần thực nghiệm, nhóm có phải thực hiện lại toàn bộ các yêu cầu trên công cụ bên thứ ba hay chỉ cần minh họa một số chức năng"* thì thầy trả lời: *"Cần thực nghiệm nha - của Azure các service tính phí - em so sánh với các open source, em so sánh với các dịch vụ em sử dụng trong Azure."*
 
 ## Yêu cầu chi tiết
 
