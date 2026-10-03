@@ -1,0 +1,297 @@
+package proxy
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"net/http/httputil"
+	"net/url"
+	"strings"
+	"time"
+	"github.com/fizzisme/api-gateway/internal/logger"
+	"go.uber.org/zap"
+	"github.com/sony/gobreaker/v2"
+	"github.com/fizzisme/api-gateway/internal/resilience"
+	"github.com/fizzisme/api-gateway/internal/constants"
+	"go.opentelemetry.io/otel"
+    "go.opentelemetry.io/otel/propagation"
+)
+
+// forwardIdentityHeader copies a gateway-verified identity header from the
+// inbound request to the outbound one, but only when it actually has a
+// value. JWTAuth (internal/middleware/jwt.go) deletes these headers for
+// anonymous/unauthenticated requests, and Header.Get on a deleted header
+// returns "" rather than signaling absence -- forwarding that blindly with
+// Set would make the header present-but-empty on the outbound request,
+// which is a different, easy-to-miss signal for a backend to have to
+// special-case versus the header being absent entirely.
+func forwardIdentityHeader(pr *httputil.ProxyRequest, key string) {
+	value := pr.In.Header.Get(key)
+	if value == "" {
+		pr.Out.Header.Del(key)
+		return
+	}
+	pr.Out.Header.Set(key, value)
+}
+
+// ReverseProxy wraps httputil.ReverseProxy for a single backend
+// service, stripping a route prefix before forwarding requests and
+// enforcing a per-request timeout on top of circuit breaking/retry.
+type ReverseProxy struct {
+	targetURL *url.URL
+	proxy     *httputil.ReverseProxy
+	timeout   time.Duration
+	streaming bool
+	uploadTimeout time.Duration
+	uploadMaxBody int64
+}
+
+// isEventStream reports whether the client asked for an SSE response.
+// Both EventSource and fetch-based SSE clients send this Accept value.
+func isEventStream(r *http.Request) bool {
+	return strings.Contains(r.Header.Get("Accept"), "text/event-stream")
+}
+
+// isMultipart reports whether the request carries a file upload form.
+func isMultipart(r *http.Request) bool {
+	return strings.HasPrefix(
+		strings.ToLower(r.Header.Get("Content-Type")),
+		"multipart/form-data",
+	)
+}
+
+// New creates a ReverseProxy that forwards requests to target, after
+// stripping prefix from the incoming request path. Outbound calls go
+// through a circuit breaker + retry policy (see resilience.Builder),
+// and each request is bounded by timeout (see ServeHTTP). When
+// streaming is true, SSE requests are exempt from that bound.
+func New(target string,
+	prefix string,
+	timeout time.Duration,
+	breaker *gobreaker.CircuitBreaker[*http.Response],
+	retryCfg *resilience.RetryConfig,
+	service string,
+	streaming bool,
+	uploadTimeout time.Duration,
+	uploadMaxBody int64,
+) (*ReverseProxy, error) {
+
+	u, err := url.Parse(target)
+	if err != nil {
+		return nil, err
+	}
+
+ 	// Build a bare ReverseProxy and configure routing via Rewrite
+ 	// instead of NewSingleHostReverseProxy + Director. Rewrite is the
+ 	// modern replacement: it separates the original inbound request
+ 	// (pr.In, read-only) from the outbound request being built
+ 	// (pr.Out, mutable), which avoids accidentally mutating client
+ 	// request state and removes the need to manually chain a
+ 	// "default director" before applying our own changes.
+    rp := &httputil.ReverseProxy{}
+
+	// Wrap the transport with circuit breaking and retry logic so
+	// failing/unhealthy backends don't get hammered with requests.
+	rp.Transport = resilience.
+					NewBuilder().
+					WithBreaker(breaker, service).
+					WithRetry(retryCfg, service).
+					Build()
+
+
+    rp.Rewrite = func(pr *httputil.ProxyRequest) {
+
+        // Sets pr.Out's scheme/host and joins its path with u's path,
+    	// equivalent to what the old Director + NewSingleHostReverseProxy
+    	// combo did automatically.
+        pr.SetURL(u)
+
+        // Sets X-Forwarded-For / X-Forwarded-Host / X-Forwarded-Proto
+       	// on pr.Out based on pr.In, so the backend knows the original
+       	// client IP and host even though the gateway is the direct caller.
+        pr.SetXForwarded()
+
+        // Strip the gateway-facing prefix so the backend sees paths
+    	// relative to its own root (e.g. "/auth/login" -> "/login").
+        pr.Out.URL.Path = strings.TrimPrefix(
+            pr.Out.URL.Path,
+            prefix,
+        )
+
+		if pr.Out.URL.Path == "" {
+    		pr.Out.URL.Path = "/"
+		}
+
+        // Drop the client's original Authorization header (raw JWT).
+    	// The backend should trust the gateway-verified identity
+    	// headers below instead of re-parsing the token itself.
+        pr.Out.Header.Del("Authorization")
+
+        // Forward identity/context set by upstream gateway middleware
+        // (JWTAuth, RequestID) from the inbound request to the outbound
+        // one, since pr.Out starts as a fresh clone and does not carry
+        // these over automatically.
+        //
+        // Identity headers use forwardIdentityHeader, not Set, because
+        // JWTAuth strips them (Header.Del) for unauthenticated/optional-auth
+        // requests -- Header.Get after a Del returns "", and Set would then
+        // hand the backend a header that IS present with an empty value.
+        // That is a different signal than "no identity", and every backend
+        // service would otherwise have to know to treat "" as absent.
+        forwardIdentityHeader(pr, constants.HeaderUserID)
+        forwardIdentityHeader(pr, constants.HeaderUserEmail)
+        forwardIdentityHeader(pr, constants.HeaderUserRoles)
+
+        pr.Out.Header.Set(
+            constants.HeaderRequestID,
+            pr.In.Header.Get(constants.HeaderRequestID),
+        )
+
+		// Propagate OpenTelemetry trace context to downstream service.
+		otel.GetTextMapPropagator().Inject(
+			pr.Out.Context(),
+			propagation.HeaderCarrier(pr.Out.Header),
+		)
+
+		logger.Log.Info(
+			"traceparent",
+			zap.String("value", pr.Out.Header.Get("traceparent")),
+		)
+    }
+
+	// Return a generic 502 to the client on backend failures
+	// (connection refused, timeout, etc.) instead of leaking
+	// internal error details.
+	// Return a generic 504 to timeout requests
+	rp.ErrorHandler = func(
+		w http.ResponseWriter,
+		r *http.Request,
+		err error,
+	) {
+
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			http.Error(
+				w,
+				"Request entity too large",
+				http.StatusRequestEntityTooLarge,
+			)
+			return
+		}
+
+		logger.Log.Error(
+			"proxy error",
+			zap.Error(err),
+		)
+
+		if errors.Is(err, context.DeadlineExceeded) {
+			http.Error(
+				w,
+				"Gateway timeout",
+				http.StatusGatewayTimeout,
+			)
+			return
+		}
+
+		http.Error(
+			w,
+			"Bad Gateway",
+			http.StatusBadGateway,
+		)
+	}
+
+	// Log response
+	rp.ModifyResponse = func(resp *http.Response) error {
+
+		logger.Log.Info(
+			"proxy response",
+			zap.Int("status", resp.StatusCode),
+		)
+
+		return nil
+	}
+
+	return &ReverseProxy{
+		targetURL: u,
+		proxy:     rp,
+		timeout: timeout,
+		streaming: streaming,
+		uploadTimeout: uploadTimeout,
+		uploadMaxBody: uploadMaxBody,
+	}, nil
+}
+
+// ReverseProxy implement http.Handler
+func (p *ReverseProxy) ServeHTTP(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+
+	// File uploads on an upload-enabled route: reject oversized bodies
+	// early, extend the server-wide read/write deadlines (10s in main.go)
+	// for this request only, and use the upload timeout instead of the
+	// regular per-route one.
+	if p.uploadTimeout > 0 && isMultipart(r) {
+		if p.uploadMaxBody > 0 {
+			if r.ContentLength > p.uploadMaxBody {
+				http.Error(
+					w,
+					"Request entity too large",
+					http.StatusRequestEntityTooLarge,
+				)
+				return
+			}
+			// Backstop for requests without a reliable Content-Length;
+			// ErrorHandler maps the resulting error to 413.
+			r.Body = http.MaxBytesReader(w, r.Body, p.uploadMaxBody)
+		}
+
+		deadline := time.Now().Add(p.uploadTimeout)
+		rc := http.NewResponseController(w)
+		if err := rc.SetReadDeadline(deadline); err != nil {
+			logger.Log.Warn("cannot extend read deadline for upload", zap.Error(err))
+		}
+		if err := rc.SetWriteDeadline(deadline); err != nil {
+			logger.Log.Warn("cannot extend write deadline for upload", zap.Error(err))
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), p.uploadTimeout)
+		defer cancel()
+
+		p.proxy.ServeHTTP(w, r.Clone(ctx))
+		return
+	}
+
+
+	// SSE streams on a streaming route live for minutes: clear the
+	// server-wide WriteTimeout for this response and skip the per-route
+	// timeout. Clients reconnect with Last-Event-ID if the stream drops.
+	if p.streaming && isEventStream(r) {
+		err := http.NewResponseController(w).SetWriteDeadline(time.Time{})
+		if err != nil {
+			logger.Log.Warn(
+				"cannot clear write deadline for event stream",
+				zap.Error(err),
+			)
+		}
+
+		p.proxy.ServeHTTP(w, r)
+		return
+	}
+
+	if p.timeout <= 0 {
+		p.proxy.ServeHTTP(w,r)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(
+		r.Context(),
+		p.timeout,
+	)
+
+	defer cancel()
+
+	newReq := r.Clone(ctx)
+
+	p.proxy.ServeHTTP(w, newReq)
+}
