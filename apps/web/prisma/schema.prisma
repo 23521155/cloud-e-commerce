@@ -1,7 +1,7 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
+// Bookstore e-commerce schema (Azure SQL / SQL Server).
+// Note: SQL Server does not support enums — status fields are strings with allowed values listed above them.
+// Catalog references use NoAction on delete: SQL Server rejects multiple cascade paths.
+// Tables and columns are snake_case in the database; the Python recommender reads the same tables.
 
 generator client {
   provider = "prisma-client"
@@ -10,4 +10,442 @@ generator client {
 
 datasource db {
   provider = "sqlserver"
+}
+
+// ---------------------------------------------------------------- identity
+
+model User {
+  id              BigInt    @id @default(autoincrement())
+  /// "app" = registered on this site, "amazon" = imported from the dataset
+  source          String    @default("app") @db.NVarChar(16)
+  /// Original id from the imported dataset; null for users who signed up here
+  externalId      String?   @unique @map("external_id") @db.NVarChar(64)
+  email           String?   @unique @db.NVarChar(320)
+  emailVerifiedAt DateTime? @map("email_verified_at")
+  displayName     String?   @map("display_name") @db.NVarChar(120)
+  avatarUrl       String?   @map("avatar_url") @db.NVarChar(1000)
+  /// customer | admin
+  role            String    @default("customer") @db.NVarChar(16)
+  isActive        Boolean   @default(true) @map("is_active")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  credential      UserCredential?
+  oauthAccounts   OAuthAccount[]
+  sessions        Session[]
+  addresses       Address[]
+  reviews         Review[]
+  carts           Cart[]
+  orders          Order[]
+  wishlistItems   WishlistItem[]
+  events          InteractionEvent[]
+  recommendations UserRecommendation[]
+
+  @@map("users")
+}
+
+/// Split from users so password hashes are never loaded by accident.
+model UserCredential {
+  userId            BigInt   @id @map("user_id")
+  passwordHash      String   @map("password_hash") @db.NVarChar(255)
+  passwordUpdatedAt DateTime @default(now()) @map("password_updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_credentials")
+}
+
+model OAuthAccount {
+  id                BigInt    @id @default(autoincrement())
+  userId            BigInt    @map("user_id")
+  /// google | facebook | github
+  provider          String    @db.NVarChar(32)
+  providerAccountId String    @map("provider_account_id") @db.NVarChar(128)
+  accessToken       String?   @map("access_token") @db.NVarChar(Max)
+  refreshToken      String?   @map("refresh_token") @db.NVarChar(Max)
+  expiresAt         DateTime? @map("expires_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("oauth_accounts")
+}
+
+model Session {
+  id           BigInt   @id @default(autoincrement())
+  userId       BigInt   @map("user_id")
+  sessionToken String   @unique @map("session_token") @db.NVarChar(255)
+  expiresAt    DateTime @map("expires_at")
+  ipAddress    String?  @map("ip_address") @db.NVarChar(45)
+  userAgent    String?  @map("user_agent") @db.NVarChar(512)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model VerificationToken {
+  id         BigInt   @id @default(autoincrement())
+  identifier String   @db.NVarChar(320)
+  token      String   @unique @db.NVarChar(255)
+  /// email_verify | password_reset
+  type       String   @db.NVarChar(32)
+  expiresAt  DateTime @map("expires_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([identifier])
+  @@map("verification_tokens")
+}
+
+model Address {
+  id            BigInt   @id @default(autoincrement())
+  userId        BigInt   @map("user_id")
+  recipientName String   @map("recipient_name") @db.NVarChar(120)
+  phone         String   @db.NVarChar(20)
+  line1         String   @db.NVarChar(255)
+  line2         String?  @db.NVarChar(255)
+  ward          String?  @db.NVarChar(120)
+  district      String?  @db.NVarChar(120)
+  city          String   @db.NVarChar(120)
+  country       String   @default("VN") @db.NVarChar(2)
+  postalCode    String?  @map("postal_code") @db.NVarChar(20)
+  isDefault     Boolean  @default(false) @map("is_default")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("addresses")
+}
+
+// ----------------------------------------------------------------- catalog
+
+model Book {
+  id            BigInt   @id @default(autoincrement())
+  /// parent_asin when imported from the dataset; null for books added by an admin
+  externalId    String?  @unique @map("external_id") @db.NVarChar(32)
+  title         String   @db.NVarChar(500)
+  slug          String   @unique @db.NVarChar(300)
+  description   String?  @db.NVarChar(Max)
+  /// Publisher or seller name
+  store         String?  @db.NVarChar(255)
+  price         Decimal  @db.Decimal(10, 2)
+  listPrice     Decimal? @map("list_price") @db.Decimal(10, 2)
+  /// Cached primary image so listing pages do not need a join
+  imageUrl      String?  @map("image_url") @db.NVarChar(1000)
+  /// Recomputed from reviews by a batch job
+  averageRating Decimal  @default(0) @map("average_rating") @db.Decimal(3, 2)
+  ratingCount   Int      @default(0) @map("rating_count")
+  stockQuantity Int      @default(0) @map("stock_quantity")
+  isActive      Boolean  @default(true) @map("is_active")
+  /// Raw dataset "details" dict (ISBN, publish date, language...) as JSON
+  detailsJson   String?  @map("details_json") @db.NVarChar(Max)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  authors    BookAuthor[]
+  categories BookCategory[]
+  images     BookImage[]
+  reviews    Review[]
+
+  @@index([averageRating(sort: Desc)])
+  @@index([isActive, createdAt(sort: Desc)])
+  @@map("books")
+}
+
+model Author {
+  id    BigInt       @id @default(autoincrement())
+  name  String       @unique @db.NVarChar(255)
+  slug  String       @unique @db.NVarChar(255)
+  bio   String?      @db.NVarChar(Max)
+  books BookAuthor[]
+
+  @@map("authors")
+}
+
+model BookAuthor {
+  bookId   BigInt @map("book_id")
+  authorId BigInt @map("author_id")
+  /// author | translator | editor
+  role     String @default("author") @db.NVarChar(16)
+
+  book   Book   @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  author Author @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@id([bookId, authorId])
+  @@index([authorId])
+  @@map("book_authors")
+}
+
+model Category {
+  id       BigInt  @id @default(autoincrement())
+  parentId BigInt? @map("parent_id")
+  name     String  @db.NVarChar(255)
+  slug     String  @unique @db.NVarChar(255)
+  level    Int     @default(0)
+  /// Materialized ancestor path, e.g. "1/14/58" — lets one query fetch a whole subtree
+  path     String  @db.NVarChar(500)
+
+  parent   Category?      @relation("CategoryTree", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  children Category[]     @relation("CategoryTree")
+  books    BookCategory[]
+
+  @@index([parentId])
+  @@index([path])
+  @@map("categories")
+}
+
+model BookCategory {
+  bookId     BigInt  @map("book_id")
+  categoryId BigInt  @map("category_id")
+  isPrimary  Boolean @default(false) @map("is_primary")
+
+  book     Book     @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([bookId, categoryId])
+  @@index([categoryId, bookId])
+  @@map("book_categories")
+}
+
+model BookImage {
+  id       BigInt  @id @default(autoincrement())
+  bookId   BigInt  @map("book_id")
+  thumbUrl String? @map("thumb_url") @db.NVarChar(1000)
+  largeUrl String? @map("large_url") @db.NVarChar(1000)
+  hiResUrl String? @map("hi_res_url") @db.NVarChar(1000)
+  position Int     @default(0)
+
+  book Book @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  @@index([bookId, position])
+  @@map("book_images")
+}
+
+// ---------------------------------------------------------------- feedback
+
+model Review {
+  id               BigInt   @id @default(autoincrement())
+  bookId           BigInt   @map("book_id")
+  userId           BigInt   @map("user_id")
+  rating           Int
+  title            String?  @db.NVarChar(500)
+  helpfulVotes     Int      @default(0) @map("helpful_votes")
+  verifiedPurchase Boolean  @default(false) @map("verified_purchase")
+  /// "app" = written here, "amazon" = imported
+  source           String   @default("app") @db.NVarChar(16)
+  reviewedAt       DateTime @default(now()) @map("reviewed_at")
+
+  book    Book           @relation(fields: [bookId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  content ReviewContent?
+
+  @@unique([userId, bookId])
+  @@index([bookId, reviewedAt(sort: Desc)])
+  @@map("reviews")
+}
+
+/// Review bodies live here: training queries scan millions of rows in `reviews`
+/// and must not drag the large text along.
+model ReviewContent {
+  reviewId BigInt @id @map("review_id")
+  text     String @db.NVarChar(Max)
+
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@map("review_contents")
+}
+
+model WishlistItem {
+  id      BigInt   @id @default(autoincrement())
+  userId  BigInt   @map("user_id")
+  bookId  BigInt   @map("book_id")
+  addedAt DateTime @default(now()) @map("added_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, bookId])
+  @@map("wishlist_items")
+}
+
+// ---------------------------------------------------------------- commerce
+
+model Cart {
+  id        BigInt   @id @default(autoincrement())
+  userId    BigInt   @map("user_id")
+  /// active | converted | abandoned
+  status    String   @default("active") @db.NVarChar(16)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items CartItem[]
+
+  @@index([userId, status])
+  @@map("carts")
+}
+
+model CartItem {
+  id        BigInt   @id @default(autoincrement())
+  cartId    BigInt   @map("cart_id")
+  bookId    BigInt   @map("book_id")
+  quantity  Int      @default(1)
+  /// Price when added, so the cart survives price changes
+  unitPrice Decimal  @map("unit_price") @db.Decimal(10, 2)
+  addedAt   DateTime @default(now()) @map("added_at")
+
+  cart Cart @relation(fields: [cartId], references: [id], onDelete: Cascade)
+
+  @@unique([cartId, bookId])
+  @@map("cart_items")
+}
+
+model Order {
+  id                  BigInt   @id @default(autoincrement())
+  orderCode           String   @unique @map("order_code") @db.NVarChar(32)
+  userId              BigInt   @map("user_id")
+  /// pending | paid | shipping | completed | cancelled | refunded
+  status              String   @default("pending") @db.NVarChar(16)
+  subtotal            Decimal  @db.Decimal(12, 2)
+  shippingFee         Decimal  @default(0) @map("shipping_fee") @db.Decimal(12, 2)
+  discount            Decimal  @default(0) @db.Decimal(12, 2)
+  totalAmount         Decimal  @map("total_amount") @db.Decimal(12, 2)
+  /// Snapshot of the shipping address as JSON — the order must not change when
+  /// the customer later edits their saved address
+  shippingAddressJson String   @map("shipping_address_json") @db.NVarChar(Max)
+  note                String?  @db.NVarChar(1000)
+  placedAt            DateTime @default(now()) @map("placed_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  user     User        @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  items    OrderItem[]
+  payments Payment[]
+
+  @@index([userId, placedAt(sort: Desc)])
+  @@index([status, placedAt(sort: Desc)])
+  @@map("orders")
+}
+
+model OrderItem {
+  id        BigInt  @id @default(autoincrement())
+  orderId   BigInt  @map("order_id")
+  bookId    BigInt  @map("book_id")
+  /// Snapshot: the book may be renamed or delisted later
+  bookTitle String  @map("book_title") @db.NVarChar(500)
+  quantity  Int
+  unitPrice Decimal @map("unit_price") @db.Decimal(10, 2)
+  lineTotal Decimal @map("line_total") @db.Decimal(12, 2)
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([bookId])
+  @@map("order_items")
+}
+
+model Payment {
+  id            BigInt    @id @default(autoincrement())
+  orderId       BigInt    @map("order_id")
+  /// vnpay | momo | cod | stripe
+  provider      String    @db.NVarChar(32)
+  transactionId String?   @map("transaction_id") @db.NVarChar(128)
+  amount        Decimal   @db.Decimal(12, 2)
+  /// pending | succeeded | failed | refunded
+  status        String    @default("pending") @db.NVarChar(16)
+  rawResponse   String?   @map("raw_response") @db.NVarChar(Max)
+  paidAt        DateTime? @map("paid_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([transactionId])
+  @@map("payments")
+}
+
+// -------------------------------------------- behaviour + recommendations
+// The website writes interaction_events and reads the three serving tables.
+// The recommendation service owns the rest — see docs/architecture/recommendation-data.md
+
+model InteractionEvent {
+  id         BigInt   @id @default(autoincrement())
+  userId     BigInt?  @map("user_id")
+  bookId     BigInt   @map("book_id")
+  /// view | click | search | add_to_cart | remove_from_cart | purchase | wishlist
+  eventType  String   @map("event_type") @db.NVarChar(24)
+  sessionId  String?  @map("session_id") @db.NVarChar(64)
+  occurredAt DateTime @default(now()) @map("occurred_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([userId, occurredAt(sort: Desc)])
+  @@index([bookId, eventType])
+  @@map("interaction_events")
+}
+
+model ModelVersion {
+  id          BigInt   @id @default(autoincrement())
+  /// als | item_knn | popularity | hybrid
+  name        String   @db.NVarChar(32)
+  version     String   @db.NVarChar(32)
+  /// Offline evaluation results: precision@k, recall@k, ndcg
+  metricsJson String?  @map("metrics_json") @db.NVarChar(Max)
+  isActive    Boolean  @default(false) @map("is_active")
+  trainedAt   DateTime @default(now()) @map("trained_at")
+
+  recommendations UserRecommendation[]
+  similarities    ItemSimilarity[]
+
+  @@unique([name, version])
+  @@map("model_versions")
+}
+
+model UserRecommendation {
+  id             BigInt   @id @default(autoincrement())
+  userId         BigInt   @map("user_id")
+  bookId         BigInt   @map("book_id")
+  score          Float
+  rank           Int
+  modelVersionId BigInt   @map("model_version_id")
+  generatedAt    DateTime @default(now()) @map("generated_at")
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  modelVersion ModelVersion @relation(fields: [modelVersionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([userId, bookId, modelVersionId])
+  @@index([userId, rank])
+  @@map("user_recommendations")
+}
+
+model ItemSimilarity {
+  id             BigInt @id @default(autoincrement())
+  bookId         BigInt @map("book_id")
+  similarBookId  BigInt @map("similar_book_id")
+  score          Float
+  modelVersionId BigInt @map("model_version_id")
+
+  modelVersion ModelVersion @relation(fields: [modelVersionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([bookId, similarBookId, modelVersionId])
+  @@index([bookId, score(sort: Desc)])
+  @@map("item_similarities")
+}
+
+/// Cold-start fallback: what to show a visitor with no history yet.
+model PopularBook {
+  id         BigInt   @id @default(autoincrement())
+  bookId     BigInt   @map("book_id")
+  categoryId BigInt?  @map("category_id")
+  score      Float
+  /// day | week | month | all_time
+  period     String   @db.NVarChar(16)
+  computedAt DateTime @default(now()) @map("computed_at")
+
+  @@unique([bookId, categoryId, period])
+  @@index([period, score(sort: Desc)])
+  @@map("popular_books")
 }

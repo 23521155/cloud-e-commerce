@@ -1,0 +1,403 @@
+// Bookstore e-commerce — database diagram
+// Paste into https://dbdiagram.io/d
+// Source of truth: apps/web/prisma/schema.prisma
+
+Project bookstore {
+  database_type: 'SQL Server'
+  Note: 'E-commerce bookstore with a recommendation service, deployed on Azure'
+}
+
+// ============================================================ identity
+
+Table users {
+  id bigint [pk, increment]
+  source nvarchar(16) [not null, default: 'app', note: 'app | amazon']
+  external_id nvarchar(64) [unique, note: 'user_id from the imported dataset']
+  email nvarchar(320) [unique]
+  email_verified_at datetime2
+  display_name nvarchar(120)
+  avatar_url nvarchar(1000)
+  role nvarchar(16) [not null, default: 'customer', note: 'customer | admin']
+  is_active bit [not null, default: 1]
+  created_at datetime2 [not null]
+  updated_at datetime2 [not null]
+}
+
+Table user_credentials {
+  user_id bigint [pk]
+  password_hash nvarchar(255) [not null]
+  password_updated_at datetime2 [not null]
+  Note: 'Split from users so password hashes are never loaded by accident'
+}
+
+Table oauth_accounts {
+  id bigint [pk, increment]
+  user_id bigint [not null]
+  provider nvarchar(32) [not null, note: 'google | facebook | github']
+  provider_account_id nvarchar(128) [not null]
+  access_token nvarchar(max)
+  refresh_token nvarchar(max)
+  expires_at datetime2
+  created_at datetime2 [not null]
+
+  Indexes {
+    (provider, provider_account_id) [unique]
+    user_id
+  }
+}
+
+Table sessions {
+  id bigint [pk, increment]
+  user_id bigint [not null]
+  session_token nvarchar(255) [unique, not null]
+  expires_at datetime2 [not null]
+  ip_address nvarchar(45)
+  user_agent nvarchar(512)
+  created_at datetime2 [not null]
+
+  Indexes {
+    user_id
+  }
+}
+
+Table verification_tokens {
+  id bigint [pk, increment]
+  identifier nvarchar(320) [not null]
+  token nvarchar(255) [unique, not null]
+  type nvarchar(32) [not null, note: 'email_verify | password_reset']
+  expires_at datetime2 [not null]
+  created_at datetime2 [not null]
+
+  Indexes {
+    identifier
+  }
+}
+
+Table addresses {
+  id bigint [pk, increment]
+  user_id bigint [not null]
+  recipient_name nvarchar(120) [not null]
+  phone nvarchar(20) [not null]
+  line1 nvarchar(255) [not null]
+  line2 nvarchar(255)
+  ward nvarchar(120)
+  district nvarchar(120)
+  city nvarchar(120) [not null]
+  country nvarchar(2) [not null, default: 'VN']
+  postal_code nvarchar(20)
+  is_default bit [not null, default: 0]
+  created_at datetime2 [not null]
+
+  Indexes {
+    user_id
+  }
+}
+
+Ref: user_credentials.user_id - users.id [delete: cascade]
+Ref: oauth_accounts.user_id > users.id [delete: cascade]
+Ref: sessions.user_id > users.id [delete: cascade]
+Ref: addresses.user_id > users.id [delete: cascade]
+
+// ============================================================= catalog
+
+Table books {
+  id bigint [pk, increment]
+  external_id nvarchar(32) [unique, note: 'parent_asin from the dataset']
+  title nvarchar(500) [not null]
+  slug nvarchar(300) [unique, not null]
+  description nvarchar(max)
+  store nvarchar(255) [note: 'publisher or seller']
+  price decimal(10,2) [not null]
+  list_price decimal(10,2)
+  image_url nvarchar(1000) [note: 'cached primary image, avoids a join on listing pages']
+  average_rating decimal(3,2) [not null, default: 0]
+  rating_count int [not null, default: 0]
+  stock_quantity int [not null, default: 0]
+  is_active bit [not null, default: 1]
+  details_json nvarchar(max) [note: 'ISBN, publish date, language...']
+  created_at datetime2 [not null]
+  updated_at datetime2 [not null]
+
+  Indexes {
+    average_rating
+    (is_active, created_at)
+  }
+}
+
+Table authors {
+  id bigint [pk, increment]
+  name nvarchar(255) [unique, not null]
+  slug nvarchar(255) [unique, not null]
+  bio nvarchar(max)
+}
+
+Table book_authors {
+  book_id bigint [not null]
+  author_id bigint [not null]
+  role nvarchar(16) [not null, default: 'author', note: 'author | translator | editor']
+
+  Indexes {
+    (book_id, author_id) [pk]
+    author_id
+  }
+}
+
+Table categories {
+  id bigint [pk, increment]
+  parent_id bigint
+  name nvarchar(255) [not null]
+  slug nvarchar(255) [unique, not null]
+  level int [not null, default: 0]
+  path nvarchar(500) [not null, note: 'materialized ancestor path, e.g. 1/14/58']
+
+  Indexes {
+    parent_id
+    path
+  }
+}
+
+Table book_categories {
+  book_id bigint [not null]
+  category_id bigint [not null]
+  is_primary bit [not null, default: 0]
+
+  Indexes {
+    (book_id, category_id) [pk]
+    (category_id, book_id)
+  }
+}
+
+Table book_images {
+  id bigint [pk, increment]
+  book_id bigint [not null]
+  thumb_url nvarchar(1000)
+  large_url nvarchar(1000)
+  hi_res_url nvarchar(1000)
+  position int [not null, default: 0]
+
+  Indexes {
+    (book_id, position)
+  }
+}
+
+Ref: book_authors.book_id > books.id [delete: cascade]
+Ref: book_authors.author_id > authors.id [delete: cascade]
+Ref: categories.parent_id > categories.id
+Ref: book_categories.book_id > books.id [delete: cascade]
+Ref: book_categories.category_id > categories.id
+Ref: book_images.book_id > books.id [delete: cascade]
+
+// ============================================================ feedback
+
+Table reviews {
+  id bigint [pk, increment]
+  book_id bigint [not null]
+  user_id bigint [not null]
+  rating int [not null, note: '1-5']
+  title nvarchar(500)
+  helpful_votes int [not null, default: 0]
+  verified_purchase bit [not null, default: 0]
+  source nvarchar(16) [not null, default: 'app', note: 'app | amazon']
+  reviewed_at datetime2 [not null]
+
+  Indexes {
+    (user_id, book_id) [unique]
+    (book_id, reviewed_at)
+  }
+}
+
+Table review_contents {
+  review_id bigint [pk]
+  text nvarchar(max) [not null]
+  Note: 'Review bodies live here so training queries over millions of rows stay light'
+}
+
+Table wishlist_items {
+  id bigint [pk, increment]
+  user_id bigint [not null]
+  book_id bigint [not null]
+  added_at datetime2 [not null]
+
+  Indexes {
+    (user_id, book_id) [unique]
+  }
+}
+
+Ref: reviews.book_id > books.id
+Ref: reviews.user_id > users.id [delete: cascade]
+Ref: review_contents.review_id - reviews.id [delete: cascade]
+Ref: wishlist_items.user_id > users.id [delete: cascade]
+
+// ============================================================ commerce
+
+Table carts {
+  id bigint [pk, increment]
+  user_id bigint [not null]
+  status nvarchar(16) [not null, default: 'active', note: 'active | converted | abandoned']
+  created_at datetime2 [not null]
+  updated_at datetime2 [not null]
+
+  Indexes {
+    (user_id, status)
+  }
+}
+
+Table cart_items {
+  id bigint [pk, increment]
+  cart_id bigint [not null]
+  book_id bigint [not null]
+  quantity int [not null, default: 1]
+  unit_price decimal(10,2) [not null, note: 'price when added']
+  added_at datetime2 [not null]
+
+  Indexes {
+    (cart_id, book_id) [unique]
+  }
+}
+
+Table orders {
+  id bigint [pk, increment]
+  order_code nvarchar(32) [unique, not null]
+  user_id bigint [not null]
+  status nvarchar(16) [not null, default: 'pending', note: 'pending | paid | shipping | completed | cancelled | refunded']
+  subtotal decimal(12,2) [not null]
+  shipping_fee decimal(12,2) [not null, default: 0]
+  discount decimal(12,2) [not null, default: 0]
+  total_amount decimal(12,2) [not null]
+  shipping_address_json nvarchar(max) [not null, note: 'snapshot: editing the saved address must not change past orders']
+  note nvarchar(1000)
+  placed_at datetime2 [not null]
+  updated_at datetime2 [not null]
+
+  Indexes {
+    (user_id, placed_at)
+    (status, placed_at)
+  }
+}
+
+Table order_items {
+  id bigint [pk, increment]
+  order_id bigint [not null]
+  book_id bigint [not null]
+  book_title nvarchar(500) [not null, note: 'snapshot of the title at purchase time']
+  quantity int [not null]
+  unit_price decimal(10,2) [not null]
+  line_total decimal(12,2) [not null]
+
+  Indexes {
+    order_id
+    book_id
+  }
+}
+
+Table payments {
+  id bigint [pk, increment]
+  order_id bigint [not null]
+  provider nvarchar(32) [not null, note: 'vnpay | momo | cod | stripe']
+  transaction_id nvarchar(128)
+  amount decimal(12,2) [not null]
+  status nvarchar(16) [not null, default: 'pending', note: 'pending | succeeded | failed | refunded']
+  raw_response nvarchar(max)
+  paid_at datetime2
+  created_at datetime2 [not null]
+
+  Indexes {
+    order_id
+    transaction_id
+  }
+}
+
+Ref: carts.user_id > users.id [delete: cascade]
+Ref: cart_items.cart_id > carts.id [delete: cascade]
+Ref: cart_items.book_id > books.id
+Ref: orders.user_id > users.id
+Ref: order_items.order_id > orders.id [delete: cascade]
+Ref: order_items.book_id > books.id
+Ref: payments.order_id > orders.id [delete: cascade]
+
+// ================================== behaviour + recommendations
+// The website writes interaction_events and reads the serving tables.
+// The recommendation service fills model_versions, user_recommendations,
+// item_similarities and popular_books.
+
+Table interaction_events {
+  id bigint [pk, increment]
+  user_id bigint [note: 'null for anonymous visitors']
+  book_id bigint [not null]
+  event_type nvarchar(24) [not null, note: 'view | click | search | add_to_cart | remove_from_cart | purchase | wishlist']
+  session_id nvarchar(64)
+  occurred_at datetime2 [not null]
+
+  Indexes {
+    (user_id, occurred_at)
+    (book_id, event_type)
+  }
+  Note: 'Append-only behaviour log — the live signal for the recommender'
+}
+
+Table model_versions {
+  id bigint [pk, increment]
+  name nvarchar(32) [not null, note: 'als | item_knn | popularity | hybrid']
+  version nvarchar(32) [not null]
+  metrics_json nvarchar(max) [note: 'precision@k, recall@k, ndcg']
+  is_active bit [not null, default: 0]
+  trained_at datetime2 [not null]
+
+  Indexes {
+    (name, version) [unique]
+  }
+}
+
+Table user_recommendations {
+  id bigint [pk, increment]
+  user_id bigint [not null]
+  book_id bigint [not null]
+  score float [not null]
+  rank int [not null]
+  model_version_id bigint [not null]
+  generated_at datetime2 [not null]
+
+  Indexes {
+    (user_id, book_id, model_version_id) [unique]
+    (user_id, rank)
+  }
+}
+
+Table item_similarities {
+  id bigint [pk, increment]
+  book_id bigint [not null]
+  similar_book_id bigint [not null]
+  score float [not null]
+  model_version_id bigint [not null]
+
+  Indexes {
+    (book_id, similar_book_id, model_version_id) [unique]
+    (book_id, score)
+  }
+}
+
+Table popular_books {
+  id bigint [pk, increment]
+  book_id bigint [not null]
+  category_id bigint [note: 'null = global ranking']
+  score float [not null]
+  period nvarchar(16) [not null, note: 'day | week | month | all_time']
+  computed_at datetime2 [not null]
+
+  Indexes {
+    (book_id, category_id, period) [unique]
+    (period, score)
+  }
+  Note: 'Cold-start fallback for visitors with no history'
+}
+
+Ref: interaction_events.user_id > users.id
+Ref: interaction_events.book_id > books.id
+Ref: user_recommendations.user_id > users.id [delete: cascade]
+Ref: user_recommendations.book_id > books.id
+Ref: user_recommendations.model_version_id > model_versions.id
+Ref: item_similarities.book_id > books.id
+Ref: item_similarities.similar_book_id > books.id
+Ref: item_similarities.model_version_id > model_versions.id
+Ref: popular_books.book_id > books.id
+Ref: popular_books.category_id > categories.id
