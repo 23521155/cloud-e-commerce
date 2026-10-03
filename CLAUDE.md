@@ -18,9 +18,9 @@ University course project (đồ án): an e-commerce platform with a recommendat
 | Database | Azure SQL Database, serverless tier, shared by both services | Required: SQL Server on Azure; serverless is cheap |
 | ORM (web) | Prisma 7 + `@prisma/adapter-mssql` | SQL Server support, migrations |
 | DB access (recommender) | SQLAlchemy + pyodbc (ODBC Driver 18) | Reads same DB |
-| Hosting | Azure Container Apps (both services as containers) | Scale to zero, cheaper than 2 App Services |
-| Registry | Azure Container Registry, pulled via managed identity | No admin credentials |
-| Networking | `web` external ingress; `recommender` internal ingress only | Recommender is not public |
+| Hosting | Azure App Service Web Apps: `web` deployed as code (Node.js runtime stack), `recommender` as a container | Required by the assignment: Web Apps |
+| Registry | Azure Container Registry (recommender image only), pulled via managed identity | No admin credentials |
+| Networking | `web` reachable from the internet; `recommender` internal only | Recommender is not public |
 | Monitoring | Application Insights (workspace-based) + Log Analytics + Azure Monitor metric alerts → email action group | Required by the course |
 | Telemetry SDKs | `@azure/monitor-opentelemetry` (web, via `src/instrumentation.ts`), `azure-monitor-opentelemetry` (recommender) | Official OpenTelemetry distros |
 | IaC | Bicep, one module per concern in `infra/modules/` | Native Azure |
@@ -58,14 +58,12 @@ Recommender (run in `apps/recommender`, once implemented): `uvicorn app.main:app
 
 - **Next.js 16** has breaking changes. Read `apps/web/node_modules/next/dist/docs/` before writing Next.js code (see `apps/web/AGENTS.md`).
 - **Prisma 7**: no `url` in the `datasource` block; the CLI URL lives in `prisma.config.ts`. `PrismaClient` requires a driver adapter: `new PrismaClient({ adapter: new PrismaMssql(process.env.DATABASE_URL) })`. Import the client from `@/generated/prisma/client`.
-- Prisma dev tooling warns on Node 20; use Node 22 (also in Dockerfiles).
+- Prisma dev tooling warns on Node 20; use Node 22.
 - Azure SQL connection strings need `encrypt=true`; local SQL Server containers also need `trustServerCertificate=true`.
 - The recommender Docker image must install `msodbcsql18` for pyodbc.
 
 ## Environment
 
-- Owner's machine: Windows 11, PowerShell, WebStorm. Docker and Azure CLI are not installed yet.
-- `D:\` itself is also a git repository; this project has its own nested repo at `D:\cloud-e-commerce`. Always run git inside the project folder.
 - Never commit `.env` files, `node_modules`, or `*.log`. Only `.env.example` files are committed.
 
 ## Working rules
