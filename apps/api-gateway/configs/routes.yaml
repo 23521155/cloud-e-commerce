@@ -1,0 +1,28 @@
+routes:
+
+  - name: user
+    prefix: /api/users
+    upstream: ${USER_SERVICE}
+
+    timeout: 5s
+
+    retry:
+      attempts: 3
+      base_delay: 1s
+      max_delay: 3s
+
+    breaker:
+      enabled: true
+
+    rate_limit:
+      requests: 10
+      window: 1m
+      burst: 5
+
+    auth_mode: optional
+
+    # multipart/form-data only: profile avatar (5 MB) and cover (10 MB)
+    # uploads. Body cap = 11 MB (11 * 1024 * 1024) to cover multipart overhead.
+    upload:
+      timeout: 30s
+      max_body_bytes: 11534336
