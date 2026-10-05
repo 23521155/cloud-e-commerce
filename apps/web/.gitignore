@@ -42,3 +42,10 @@ yarn-error.log*
 next-env.d.ts
 
 /src/generated/prisma
+
+
+/ref
+
+# raw datasets (Amazon Reviews 2023 dumps, multi-GB)
+/ref/*.jsonl
+/ref/*.jsonl.gz
