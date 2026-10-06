@@ -1096,6 +1096,89 @@
     text-align: center;
   }
 
+  /* ---------- Book detail ---------- */
+  .book {
+    padding-top: clamp(70px, 9vw, 130px);
+    padding-bottom: clamp(60px, 8vw, 120px);
+  }
+  .book__grid {
+    display: grid;
+    gap: clamp(36px, 5vw, 80px);
+  }
+  .book__cover-inner {
+    /* Book is 315:433, so cap the width so the whole cover (plus the breadcrumb above) fits in one viewport */
+    width: min(100%, 340px, calc((100svh - 240px) * 0.727));
+    min-width: 180px;
+    margin-inline: auto;
+    rotate: -2deg;
+    transition: rotate 700ms var(--ease-out-expo);
+  }
+  .book__cover-inner:hover {
+    rotate: 0deg;
+  }
+  /* Photograph of the actual copy: an old album page, print held by four photo corners */
+  .book__plate {
+    width: min(100%, 260px);
+    margin: clamp(28px, 3vw, 44px) 0 0;
+    padding: 16px 16px 14px;
+    background:
+      radial-gradient(ellipse at 20% 15%, rgba(168, 116, 63, 0.18), transparent 55%),
+      radial-gradient(ellipse at 85% 90%, rgba(107, 68, 35, 0.2), transparent 50%),
+      linear-gradient(160deg, var(--color-parchment-300), var(--color-parchment-400));
+    border: 1px solid rgba(94, 67, 48, 0.4);
+    box-shadow: 0 14px 30px -14px rgba(28, 13, 7, 0.6), inset 0 0 0 5px rgba(241, 226, 200, 0.35), inset 0 0 0 6px rgba(94, 67, 48, 0.3);
+    rotate: -1.2deg;
+  }
+  .book__photo {
+    position: relative;
+    box-shadow: 0 0 0 1px rgba(28, 13, 7, 0.55), 0 2px 6px rgba(28, 13, 7, 0.35);
+  }
+  .book__photo img {
+    display: block;
+    width: 100%;
+    height: auto;
+    filter: sepia(0.5) contrast(0.95) brightness(0.97);
+  }
+  /* Four dark triangular photo corners, one gradient each */
+  .book__photo::after {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    pointer-events: none;
+    background:
+      linear-gradient(135deg, var(--color-walnut-700) 50%, transparent 50%) top left / 24px 24px no-repeat,
+      linear-gradient(225deg, var(--color-walnut-700) 50%, transparent 50%) top right / 24px 24px no-repeat,
+      linear-gradient(45deg, var(--color-walnut-700) 50%, transparent 50%) bottom left / 24px 24px no-repeat,
+      linear-gradient(315deg, var(--color-walnut-700) 50%, transparent 50%) bottom right / 24px 24px no-repeat;
+  }
+  .book__plate figcaption {
+    margin-top: 12px;
+    color: var(--color-ink-600);
+    font-family: var(--font-serif);
+    font-size: 14px;
+    font-style: italic;
+    letter-spacing: 0.04em;
+    text-align: center;
+    text-transform: none;
+  }
+
+  /* Related list has 4 books but the grid is 3 columns below 1280px: hide the 4th rather than leave an orphan row */
+  @media (min-width: 768px) and (max-width: 1279px) {
+    .book__related > :nth-child(4) {
+      display: none;
+    }
+  }
+  @media (min-width: 1024px) {
+    .book__grid {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+      align-items: start;
+    }
+    .book__cover {
+      position: sticky;
+      top: 48px;
+    }
+  }
+
   /* ---------- Cream sections ---------- */
   .cream {
     background: var(--color-parchment-200);

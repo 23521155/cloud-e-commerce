@@ -11,6 +11,8 @@ export type Book = {
   color: string;
   subject: SubjectSlug;
   rare: boolean;
+  /** Real cover scan, when we have one (experiment) */
+  image?: string;
 };
 
 export const SUBJECTS = [
@@ -33,7 +35,7 @@ export type SortKey = (typeof SORTS)[number]["key"];
 
 // Listed newest first. Sample rows from ref/antique_books.jsonl; USD prices × 25,000 → VND.
 export const BOOKS: Book[] = [
-  { slug: "the-little-prince", title: "The Little Prince", author: "Antoine de Saint-Exupéry", year: "1943", price: 2760000, edition: "Reynal & Hitchcock", condition: "Hardcover", color: "#5c1a16", subject: "children", rare: true },
+  { slug: "the-little-prince", title: "The Little Prince", author: "Antoine de Saint-Exupéry", year: "1943", price: 2760000, edition: "Reynal & Hitchcock", condition: "Hardcover", color: "#5c1a16", subject: "children", rare: true, image: "https://m.media-amazon.com/images/I/416YuloAAtL._SY373_BO1,204,203,200_.jpg" },
   { slug: "murder-at-the-vicarage", title: "Murder at the Vicarage", author: "Agatha Christie", year: "1948", price: 5000000, edition: "First edition", condition: "Paperback", color: "#24382e", subject: "literature", rare: true },
   { slug: "the-razors-edge", title: "The Razor's Edge", author: "W. Somerset Maugham", year: "1944", price: 290000, edition: "First edition", condition: "Hardcover", color: "#3c1d0e", subject: "literature", rare: false },
   { slug: "a-tree-grows-in-brooklyn", title: "A Tree Grows in Brooklyn", author: "Betty Smith", year: "1943", price: 800000, edition: "Harper & Brothers", condition: "Hardcover", color: "#3f110e", subject: "literature", rare: false },
@@ -75,4 +77,15 @@ export function queryBooks({ subject, rare, sort, q }: CatalogueQuery): Book[] {
   if (sort === "price-desc") return [...books].sort((a, b) => b.price - a.price);
   if (sort === "year") return [...books].sort((a, b) => Number(a.year) - Number(b.year));
   return books;
+}
+
+export function getBook(slug: string): Book | undefined {
+  return BOOKS.find((b) => b.slug === slug);
+}
+
+/** Up to `limit` other books: same subject first, then the rest of the shelf. */
+export function relatedBooks(book: Book, limit = 4): Book[] {
+  const others = BOOKS.filter((b) => b.slug !== book.slug);
+  const same = others.filter((b) => b.subject === book.subject);
+  return [...same, ...others.filter((b) => b.subject !== book.subject)].slice(0, limit);
 }
