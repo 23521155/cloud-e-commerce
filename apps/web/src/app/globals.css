@@ -183,6 +183,8 @@
   /* ---------- Brush button (hand-inked, antique) ---------- */
   .dot-btn,
   .bubble,
+  .catalogue__chip,
+  .catalogue__stamp,
   .work-card__client {
     --rough-fill: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 50' preserveAspectRatio='none'%3E%3Cfilter id='r' x='-5%' y='-30%' width='110%' height='160%'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.03 .14' numOctaves='3' seed='7' result='n'/%3E%3CfeDisplacementMap in='SourceGraphic' in2='n' scale='7'/%3E%3C/filter%3E%3Crect x='7' y='7' width='186' height='36' rx='3' fill='%23000' filter='url(%23r)'/%3E%3C/svg%3E");
     --rough-oval: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 50' preserveAspectRatio='none'%3E%3Cfilter id='r' x='-5%' y='-30%' width='110%' height='160%'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.03 .14' numOctaves='3' seed='7' result='n'/%3E%3CfeDisplacementMap in='SourceGraphic' in2='n' scale='7'/%3E%3C/filter%3E%3Crect x='7' y='7' width='186' height='36' rx='60' ry='18' fill='%23000' filter='url(%23r)'/%3E%3C/svg%3E");
@@ -806,6 +808,294 @@
     color: var(--color-gold-300);
   }
 
+  /* ---------- Catalogue ---------- */
+  .catalogue {
+    padding-top: clamp(70px, 9vw, 130px);
+  }
+  .catalogue__head {
+    display: grid;
+    gap: 24px;
+    margin-bottom: clamp(36px, 5vw, 70px);
+  }
+  @media (min-width: 768px) {
+    .catalogue__head {
+      grid-template-columns: 1fr auto;
+      align-items: end;
+    }
+  }
+  /* Search: a library card-index card with a ruled line, a punched hole and an ink stamp for "Find" */
+  .catalogue__search {
+    position: relative;
+    max-width: 500px;
+    margin: 0 0 clamp(36px, 4.5vw, 64px);
+    padding: 0 20px 44px;
+    border-radius: 3px;
+    color: var(--color-walnut-900);
+    background: linear-gradient(165deg, var(--color-parchment-50), var(--color-parchment-200));
+    box-shadow: 0 22px 40px -22px rgba(0, 0, 0, 0.8), 0 1px 0 rgba(255, 255, 255, 0.35) inset;
+    rotate: -0.7deg;
+    transition: rotate 500ms var(--ease-out-expo), translate 500ms var(--ease-out-expo);
+  }
+  .catalogue__search:focus-within {
+    rotate: 0deg;
+    translate: 0 -3px;
+    outline: 2px solid var(--color-gold-400);
+    outline-offset: 5px;
+  }
+  /* The punched hole at the foot of the card */
+  .catalogue__search::after {
+    content: "";
+    position: absolute;
+    bottom: 14px;
+    left: 50%;
+    width: 14px;
+    height: 14px;
+    margin-left: -7px;
+    border-radius: 50%;
+    background: var(--color-walnut-900);
+    box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.7), 0 1px 0 rgba(255, 255, 255, 0.3);
+  }
+  .catalogue__card-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 0 8px;
+    border-bottom: 2px solid var(--color-oxblood-600);
+    color: var(--color-oxblood-700);
+    cursor: text;
+  }
+  .catalogue__card-head > span:last-child {
+    color: var(--color-ink-600);
+    font-style: italic;
+    letter-spacing: 0.08em;
+    text-transform: none;
+  }
+  .catalogue__card-body {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px 18px;
+    min-height: 80px;
+    background: repeating-linear-gradient(to bottom, transparent 0 39px, rgba(94, 67, 48, 0.28) 39px 40px);
+  }
+  .catalogue__input {
+    flex: 1;
+    min-width: 0;
+    height: 40px;
+    padding: 0 2px;
+    background: transparent;
+    border: 0;
+    color: var(--color-walnut-900);
+    font-family: var(--font-serif);
+    font-size: clamp(1.15rem, 1.7vw, 1.5rem);
+    text-transform: none;
+  }
+  .catalogue__input::placeholder {
+    color: var(--color-ink-600);
+    opacity: 0.5;
+    font-style: italic;
+  }
+  .catalogue__input:focus-visible {
+    outline: none;
+  }
+  .catalogue__input::-webkit-search-cancel-button {
+    display: none;
+  }
+  .catalogue__clear {
+    display: inline-flex;
+    align-items: center;
+    height: 40px;
+    color: var(--color-oxblood-700);
+  }
+  /* Rubber stamp: inked ring, tilted, presses in on click */
+  .catalogue__stamp {
+    --btn-mask: var(--rough-ring);
+    position: relative;
+    isolation: isolate;
+    flex: none;
+    height: 36px;
+    margin-top: 2px;
+    padding: 0 18px;
+    border: 0;
+    background: none;
+    color: var(--color-oxblood-700);
+    font-family: var(--font-serif);
+    font-size: 13px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    cursor: pointer;
+    rotate: -5deg;
+    transition: rotate 300ms var(--ease-overshoot), scale 200ms var(--ease-out-expo), color 200ms;
+  }
+  .catalogue__stamp::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    inset: -4px -6px;
+    background: currentColor;
+    -webkit-mask: var(--btn-mask) center / 100% 100% no-repeat;
+    mask: var(--btn-mask) center / 100% 100% no-repeat;
+  }
+  .catalogue__stamp:hover {
+    rotate: -1deg;
+    scale: 1.06;
+    color: var(--color-oxblood-600);
+  }
+  .catalogue__stamp:active {
+    scale: 0.94;
+  }
+  .catalogue__filters {
+    display: grid;
+    gap: 18px;
+    margin-bottom: clamp(40px, 5vw, 72px);
+    padding-block: 22px;
+    border-bottom: 1px solid rgba(241, 226, 200, 0.18);
+  }
+  .catalogue__row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 14px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .catalogue__row--sort {
+    gap: 8px 28px;
+  }
+  .catalogue__sep {
+    color: var(--color-gold-400);
+    font-family: var(--font-serif);
+  }
+  /* Filter chip: outlined ink ring, filled rust patch when active (same rough masks as the buttons) */
+  .catalogue__chip {
+    --btn-mask: var(--rough-ring);
+    position: relative;
+    isolation: isolate;
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 22px;
+    font-family: var(--font-serif);
+    font-size: 14px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    color: var(--color-parchment-100);
+    transition: color 250ms var(--ease-out-expo);
+  }
+  .catalogue__chip::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    inset: -2px -4px;
+    background: currentColor;
+    -webkit-mask: var(--btn-mask) center / 100% 100% no-repeat;
+    mask: var(--btn-mask) center / 100% 100% no-repeat;
+    transition: filter 250ms var(--ease-out-expo), transform 250ms var(--ease-out-expo);
+  }
+  .catalogue__chip:hover {
+    color: var(--color-gold-300);
+  }
+  .catalogue__chip.is-active {
+    --btn-mask: var(--rough-fill);
+    color: var(--color-parchment-100);
+  }
+  .catalogue__chip.is-active::before {
+    background:
+      linear-gradient(100deg, rgba(255,255,255,.1), rgba(0,0,0,.12)),
+      linear-gradient(#a8542f, #8f3f22);
+  }
+  .catalogue__grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: clamp(40px, 5vw, 80px) clamp(14px, 2.4vw, 40px);
+  }
+  @media (min-width: 768px) {
+    .catalogue__grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+  @media (min-width: 1280px) {
+    .catalogue__grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+  }
+  /* Narrow phones: a single column keeps the long titles readable */
+  @media (max-width: 479px) {
+    .catalogue__grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  .catalogue__pager {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px 24px;
+    margin-top: clamp(56px, 7vw, 110px);
+    padding-top: 28px;
+    border-top: 1px solid rgba(241, 226, 200, 0.18);
+  }
+  .catalogue__pages {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .catalogue__chip--num {
+    justify-content: center;
+    min-width: 48px;
+    padding: 0 12px;
+  }
+  .catalogue__gap {
+    padding-inline: 6px;
+    color: var(--color-gold-400);
+    letter-spacing: 0.2em;
+  }
+  .catalogue__step {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 44px;
+    color: var(--color-parchment-100);
+  }
+  .catalogue__step.is-disabled {
+    color: var(--color-parchment-100);
+    opacity: 0.35;
+  }
+  .catalogue__step-mark {
+    font-family: var(--font-serif);
+    font-size: 18px;
+    color: var(--color-gold-400);
+    transition: transform 250ms var(--ease-out-expo);
+  }
+  .catalogue__step-mark--prev {
+    transform: scaleX(-1);
+  }
+  a.catalogue__step:hover .catalogue__step-mark {
+    transform: translateX(3px) rotate(-8deg);
+  }
+  a.catalogue__step:hover .catalogue__step-mark--prev {
+    transform: scaleX(-1) translateX(3px) rotate(-8deg);
+  }
+  .catalogue__count {
+    flex-basis: 100%;
+    margin: 0;
+    text-align: center;
+    color: var(--color-gold-400);
+  }
+  @media (min-width: 768px) {
+    .catalogue__count {
+      flex-basis: auto;
+    }
+  }
+  .catalogue__empty {
+    padding-block: clamp(60px, 10vw, 140px);
+    text-align: center;
+  }
+
   /* ---------- Cream sections ---------- */
   .cream {
     background: var(--color-parchment-200);
@@ -924,11 +1214,13 @@
   }
 }
 
-/* Home page scrolls without a visible scrollbar (Lenis still drives the scroll). */
-html:has(.hero) {
+/* Home and catalogue scroll without a visible scrollbar (Lenis still drives the scroll). */
+html:has(.hero),
+html:has(.catalogue) {
   scrollbar-width: none;
 }
-html:has(.hero)::-webkit-scrollbar {
+html:has(.hero)::-webkit-scrollbar,
+html:has(.catalogue)::-webkit-scrollbar {
   display: none;
 }
 
