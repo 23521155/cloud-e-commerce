@@ -1928,6 +1928,164 @@
     mask: var(--ring) center / 100% 100% no-repeat;
   }
 
+  /* ---------- Auth (sign in, register, reset) ---------- */
+  .auth__form {
+    display: grid;
+    gap: 22px;
+  }
+  .auth__field {
+    display: grid;
+    gap: 2px;
+  }
+  .auth__label-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .auth__aside {
+    color: var(--color-oxblood-700);
+    font-size: 15px;
+    font-style: italic;
+  }
+  .auth__password {
+    position: relative;
+    display: block;
+  }
+  .auth__password .co__input {
+    padding-right: 64px;
+  }
+  .auth__reveal {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    height: 42px;
+    padding: 0 4px;
+    border: 0;
+    background: none;
+    color: var(--color-oxblood-700);
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .auth__submit {
+    justify-self: start;
+    margin-top: 6px;
+    border: 0;
+    background: none;
+    cursor: pointer;
+  }
+  .auth__submit:disabled {
+    cursor: progress;
+    opacity: 0.7;
+  }
+  /* Phones: full-width submit for the thumb, and no book art above the form */
+  @media (max-width: 639px) {
+    .auth__submit {
+      justify-self: stretch;
+      justify-content: center;
+    }
+    .auth .auth__books {
+      display: none;
+    }
+  }
+  .auth__or {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 24px 0;
+    color: var(--color-ink-600);
+    font-size: 12px;
+  }
+  .auth__or::before,
+  .auth__or::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: rgba(94, 67, 48, 0.3);
+  }
+  .auth__google {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    width: 100%;
+    min-height: 50px;
+    padding: 0 18px;
+    border: 1.5px solid rgba(94, 67, 48, 0.35);
+    border-radius: 4px;
+    background: var(--color-parchment-50);
+    color: var(--color-walnut-900);
+    font-family: var(--font-serif);
+    font-size: 15px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: border-color 200ms, background-color 200ms;
+  }
+  .auth__google:hover {
+    border-color: var(--color-oxblood-700);
+    background: #fff9ee;
+  }
+  .auth__google svg {
+    flex: none;
+    width: 20px;
+    height: 20px;
+  }
+  .auth__switch {
+    margin: 24px 0 0;
+    color: var(--color-ink-600);
+    font-style: italic;
+    text-align: center;
+  }
+  .auth__switch a {
+    color: #a8542f; /* rust orange, same as the solid buttons */
+    font-style: normal;
+  }
+  .auth__sent {
+    color: var(--color-walnut-900);
+    font-family: var(--font-serif);
+    font-size: clamp(17px, 1.4vw, 20px);
+    line-height: 1.5;
+  }
+  .auth .co__card :where(a, button, input):focus-visible {
+    outline-color: var(--color-oxblood-700);
+  }
+
+  /* Shelf art left, index card right */
+  .auth__layout {
+    display: grid;
+    gap: clamp(36px, 5vw, 72px);
+    align-items: start;
+  }
+  .auth__books {
+    display: flex;
+    margin-top: clamp(32px, 4vw, 56px);
+    padding-left: 4%;
+  }
+  .auth__book {
+    width: clamp(90px, 11vw, 160px);
+    rotate: calc((var(--i) - 1) * 8deg);
+    translate: 0 calc(var(--i) * var(--i) * 6px - var(--i) * 8px);
+  }
+  .auth__book + .auth__book {
+    margin-left: -6%;
+  }
+  .auth__card {
+    width: 100%;
+    max-width: 520px;
+  }
+  .auth__body {
+    padding-top: 22px;
+  }
+  @media (min-width: 900px) {
+    .auth__layout {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+    .auth__card {
+      justify-self: end;
+    }
+  }
+
   /* ---------- Cream sections ---------- */
   .cream {
     background: var(--color-parchment-200);
