@@ -2086,6 +2086,243 @@
     }
   }
 
+  /* ---------- Account: an open ledger, the password on a loose slip ---------- */
+  .acc-notice {
+    padding: 10px 14px;
+    border: 1px dashed currentColor;
+    color: var(--color-forest-800);
+    font-family: var(--font-serif);
+    font-style: italic;
+  }
+  .ledger {
+    display: grid;
+    gap: clamp(44px, 5vw, 64px);
+  }
+  .ledger :where(a, button, select):focus-visible {
+    outline-color: var(--color-oxblood-700);
+  }
+  /* The walnut board shows round the pages like a cover */
+  .ledger__book {
+    position: relative;
+    display: grid;
+    padding: 10px;
+    border-radius: 5px;
+    color: var(--color-walnut-900);
+    background: linear-gradient(160deg, var(--color-walnut-600), var(--color-walnut-800));
+    box-shadow: 0 44px 70px -30px rgba(0, 0, 0, 0.95), inset 0 0 0 1px rgba(235, 207, 158, 0.18);
+  }
+  .ledger__page {
+    display: grid;
+    align-content: start;
+    gap: 14px;
+    padding: clamp(28px, 3.5vw, 48px) clamp(22px, 3vw, 44px) clamp(28px, 3vw, 40px);
+    background:
+      radial-gradient(ellipse at 20% 10%, rgba(168, 116, 63, 0.14), transparent 55%),
+      linear-gradient(170deg, var(--color-parchment-50), var(--color-parchment-200));
+  }
+  /* Ruled ledger margin: a red double line down the left page */
+  .ledger__page--left {
+    padding-left: calc(clamp(22px, 3vw, 44px) + 36px);
+    background:
+      linear-gradient(to right, transparent 0 calc(clamp(22px, 3vw, 44px) + 14px), rgba(147, 53, 43, 0.5) 0 calc(clamp(22px, 3vw, 44px) + 15px), transparent 0 calc(clamp(22px, 3vw, 44px) + 18px), rgba(147, 53, 43, 0.5) 0 calc(clamp(22px, 3vw, 44px) + 19px), transparent 0),
+      radial-gradient(ellipse at 20% 10%, rgba(168, 116, 63, 0.14), transparent 55%),
+      linear-gradient(170deg, var(--color-parchment-50), var(--color-parchment-200));
+  }
+  .ledger__title {
+    margin: 0 0 clamp(12px, 1.6vw, 20px);
+    color: var(--color-forest-800);
+    font-family: var(--font-serif);
+    font-size: clamp(1.8rem, 3vw, 2.8rem);
+    font-weight: 400;
+    line-height: 1.05;
+    text-wrap: balance;
+  }
+  .ledger__title em {
+    display: block;
+    color: var(--color-oxblood-700);
+  }
+  .ledger__entry {
+    display: grid;
+    align-content: start;
+    padding-top: 6px;
+    border-bottom: 1px solid rgba(36, 56, 46, 0.38);
+    transition: border-color 200ms, box-shadow 200ms;
+  }
+  .ledger__entry:focus-within {
+    border-bottom-color: var(--color-oxblood-700);
+    box-shadow: 0 1px 0 var(--color-oxblood-700);
+  }
+  .ledger__caption {
+    color: var(--color-ink-600);
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+  }
+  .ledger__input {
+    width: 100%;
+    height: 44px;
+    padding: 0 2px;
+    border: 0;
+    border-radius: 0;
+    background-color: transparent;
+    color: var(--color-walnut-900);
+    font-family: var(--font-serif);
+    font-size: clamp(1.15rem, 1.6vw, 1.45rem);
+    caret-color: var(--color-oxblood-700);
+  }
+  .ledger__input:focus-visible {
+    outline: none;
+  }
+  .ledger__input::placeholder {
+    color: var(--color-ink-600);
+    opacity: 0.55;
+    font-style: italic;
+  }
+  .ledger__entry:has(.ledger__input:user-invalid) {
+    border-bottom-color: var(--color-oxblood-600);
+  }
+  .ledger__pair {
+    display: grid;
+    gap: 14px;
+  }
+  @media (min-width: 640px) {
+    .ledger__pair {
+      grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    }
+  }
+  .ledger__margin {
+    max-width: 32ch;
+    margin: 14px 0 0;
+    color: var(--color-ink-600);
+    font-size: 16px;
+    font-style: italic;
+  }
+  /* Save sits on the right page, the saved note beside it */
+  .ledger__to-slip {
+    justify-self: start;
+    color: var(--color-oxblood-700);
+    font-family: var(--font-serif);
+    font-size: clamp(15px, 1.2cqi, 18px);
+  }
+  .ledger__slip-anchor {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    scroll-margin-top: 50vh;
+  }
+  .ledger__foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px 18px;
+    margin-top: clamp(8px, 1.4cqi, 20px);
+  }
+  .ledger__foot .auth__submit {
+    margin-top: 0;
+  }
+  .ledger__foot .acc-notice {
+    padding: 6px 12px;
+  }
+
+  /* Wide screens: the open-book photo is the book. Pages sit inside its gold frames, under the
+     headings printed in the photo; every size scales with the book so the fields always fit. */
+  @media (min-width: 1280px) {
+    .ledger__book {
+      container-type: inline-size;
+      display: block;
+      aspect-ratio: 1673 / 940;
+      padding: 0;
+      border-radius: 0;
+      background: url("/images/open-book.png") center / 100% 100% no-repeat;
+      box-shadow: none;
+      /* Fade the photo's dark backdrop into the page so no rectangle edge shows */
+      mask:
+        linear-gradient(to right, transparent, #000 4%, #000 96%, transparent),
+        linear-gradient(to bottom, transparent, #000 5%, #000 95%, transparent);
+      mask-composite: intersect;
+    }
+    .ledger__page,
+    .ledger__page--left {
+      position: absolute;
+      top: 32.6%;
+      height: 46.6%;
+      gap: clamp(8px, 1cqi, 14px);
+      padding: 0;
+      background: none;
+    }
+    .ledger__page--left {
+      left: 12.2%;
+      width: 33%;
+    }
+    .ledger__page--right {
+      left: 56.6%;
+      width: 33.8%;
+    }
+    .ledger__title {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+    .ledger__caption {
+      font-size: clamp(10px, 0.8cqi, 12px);
+    }
+    .ledger__input {
+      height: clamp(32px, 3cqi, 44px);
+      font-size: clamp(15px, 1.6cqi, 23px);
+    }
+    .ledger__pair {
+      grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+      gap: clamp(12px, 1.6cqi, 24px);
+    }
+    .ledger__margin {
+      margin-top: clamp(6px, 1cqi, 14px);
+      font-size: clamp(14px, 1.15cqi, 17px);
+    }
+  }
+  .ledger__slip {
+    position: relative;
+    justify-self: center;
+    width: min(100%, 780px);
+    padding: 26px clamp(18px, 2.6vw, 32px) 30px;
+    border-radius: 2px;
+    color: var(--color-walnut-900);
+    background: linear-gradient(170deg, #fbf3e6, #ecdcc0);
+    box-shadow: 0 26px 46px -24px rgba(0, 0, 0, 0.85);
+    rotate: -1.2deg;
+  }
+  .ledger__slip-head {
+    margin: 0 0 18px;
+    color: var(--color-forest-800);
+    font-family: var(--font-serif);
+    font-size: clamp(1.4rem, 2.2vw, 1.9rem);
+    font-weight: 400;
+  }
+  .ledger__slip-head em {
+    color: var(--color-oxblood-700);
+  }
+  .ledger__slip .acc-notice {
+    margin-bottom: 18px;
+  }
+  .ledger__slip-form {
+    display: grid;
+    gap: 18px 24px;
+  }
+  @media (min-width: 860px) {
+    .ledger__slip-form {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      align-items: start;
+    }
+    .ledger__slip-form .auth__submit {
+      grid-column: 1 / -1;
+    }
+  }
+  .ledger__slip :where(button, input):focus-visible {
+    outline-color: var(--color-oxblood-700);
+  }
+
   /* ---------- Cream sections ---------- */
   .cream {
     background: var(--color-parchment-200);
