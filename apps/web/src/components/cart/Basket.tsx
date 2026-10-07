@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { BookCover } from "@/components/ui/BookArt";
 import { DotButton } from "@/components/ui/DotButton";
+import { Logo } from "@/components/ui/Logo";
 import type { BasketLine } from "@/lib/basket";
 
 const price = new Intl.NumberFormat("en-US", { style: "currency", currency: "VND", maximumFractionDigits: 0 });
@@ -44,21 +45,22 @@ function CoverFan({ lines }: { lines: BasketLine[] }) {
   );
 }
 
-/** Rubber seal on the card, lettered round the rim. */
-function Seal() {
+/** Rubber seal on the card, lettered round the rim, the shop's mark in the middle in the seal's one ink. */
+export function Seal() {
   return (
-    <svg className="lib-card__seal" viewBox="0 0 120 120" aria-hidden="true">
-      <defs>
-        <path id="seal-rim" d="M60 60 m-44 0 a44 44 0 1 1 88 0 a44 44 0 1 1 -88 0" />
-      </defs>
-      <circle cx="60" cy="60" r="57" fill="none" stroke="currentColor" strokeWidth="2.5" />
-      <circle cx="60" cy="60" r="33" fill="none" stroke="currentColor" strokeWidth="1.2" />
-      <text fontSize="10" fill="currentColor">
-        <textPath href="#seal-rim" textLength="272" lengthAdjust="spacing">MARGINALLEYA · USED &amp; RARE BOOKS ·</textPath>
-      </text>
-      {/* An open book */}
-      <path d="M41 66 q9 -6 19 0 q10 -6 19 0 v-16 q-9 -6 -19 0 q-10 -6 -19 0 z M60 50 v16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
-    </svg>
+    <span className="lib-card__seal" aria-hidden="true">
+      <svg viewBox="0 0 120 120">
+        <defs>
+          <path id="seal-rim" d="M60 60 m-44 0 a44 44 0 1 1 88 0 a44 44 0 1 1 -88 0" />
+        </defs>
+        <circle cx="60" cy="60" r="57" fill="none" stroke="currentColor" strokeWidth="2.5" />
+        <circle cx="60" cy="60" r="33" fill="none" stroke="currentColor" strokeWidth="1.2" />
+        <text fontSize="10" fill="currentColor">
+          <textPath href="#seal-rim" textLength="272" lengthAdjust="spacing">MARGINALLEYA · USED &amp; RARE BOOKS ·</textPath>
+        </text>
+      </svg>
+      <Logo className="lib-card__seal-logo" />
+    </span>
   );
 }
 
