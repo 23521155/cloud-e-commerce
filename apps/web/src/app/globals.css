@@ -2521,6 +2521,54 @@
     pointer-events: none;
   }
 
+  /* ---------- Wishlist: catalogue cards with actions under them ---------- */
+  .wish__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 18px;
+    margin-top: 14px;
+    padding: 12px 6px 0;
+    border-top: 1px solid rgba(241, 226, 200, 0.16);
+    color: var(--color-parchment-200);
+  }
+  .wish__add {
+    min-height: 32px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--color-gold-300);
+    cursor: pointer;
+  }
+  .wish__sold-note {
+    color: var(--color-gold-300);
+    font-family: var(--font-serif);
+    font-style: italic;
+  }
+  /* A sold copy dims and takes a stamp, but stays so the reader sees what happened */
+  .wish--sold .work-card__media {
+    filter: grayscale(0.7) brightness(0.75);
+  }
+  .wish--sold .work-card__content {
+    opacity: 0.6;
+  }
+  .wish__stamp {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    z-index: 1;
+    padding: 2px 18px;
+    border: 4px double var(--color-parchment-50);
+    color: var(--color-parchment-50);
+    font-family: var(--font-serif);
+    font-size: clamp(1.6rem, 3vw, 2.4rem);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    translate: -50% -50%;
+    rotate: -14deg;
+  }
+
   /* ---------- Cream sections ---------- */
   .cream {
     background: var(--color-parchment-200);
