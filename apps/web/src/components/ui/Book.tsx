@@ -2,10 +2,10 @@ import Image from "next/image";
 
 export type BookVariant = "forest" | "green" | "red" | "gold" | "navy" | "taupe";
 
-type BookProps = { title: string; author: string; variant?: BookVariant; plain?: boolean; className?: string };
+type BookProps = { title: string; author: string; variant?: BookVariant; plain?: boolean; eager?: boolean; className?: string };
 
 /** Leather book photo (public/images/book-<variant>.png) with the title laid over the cover, absolutely positioned. */
-export function Book({ title, author, variant = "forest", plain = false, className = "" }: BookProps) {
+export function Book({ title, author, variant = "forest", plain = false, eager = false, className = "" }: BookProps) {
   return (
     <div
       aria-hidden="true"
@@ -19,6 +19,7 @@ export function Book({ title, author, variant = "forest", plain = false, classNa
         width={436}
         height={573}
         sizes="(max-width: 768px) 70vw, 420px"
+        loading={eager ? "eager" : "lazy"}
         className="absolute max-w-none"
         style={{ width: "138.4%", height: "auto", left: "-19%", top: "-16.6%" }}
       />

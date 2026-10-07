@@ -63,7 +63,7 @@ export default async function BookPage({ params }: PageProps<"/books/[slug]">) {
         <div className="book__grid">
           <div className="book__cover" data-reveal="fade">
             <div className="book__cover-inner">
-              <BookCover title={book.title} author={book.author} color={book.color} />
+              <BookCover title={book.title} author={book.author} color={book.color} eager />
             </div>
           </div>
 

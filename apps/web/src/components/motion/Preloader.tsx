@@ -55,7 +55,7 @@ export function Preloader() {
       <div className="preload__images">
         {COVERS.map((cover) => (
           <div key={cover.title} className="preload__image">
-            <BookCover {...cover} className="w-[78%]" />
+            <BookCover {...cover} eager className="w-[78%]" />
           </div>
         ))}
       </div>
