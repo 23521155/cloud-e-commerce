@@ -9,7 +9,6 @@ const MENU = [
   { href: "/catalogue", label: "Catalogue" },
   { href: "/catalogue?rare=1", label: "Rare books" },
   { href: "/sell", label: "Sell books" },
-  { href: "/search", label: "Search" },
 ];
 
 const FOOT = [
