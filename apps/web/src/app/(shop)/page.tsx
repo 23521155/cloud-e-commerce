@@ -352,7 +352,7 @@ export default function Home() {
                   {BUBBLES.map((bubble, i) => (
                     <Link
                       key={bubble}
-                      href={`/search?q=${encodeURIComponent(bubble)}`}
+                      href={`/catalogue?q=${encodeURIComponent(bubble)}`}
                       className="bubble"
                       style={{ "--i": i, "--r": `${((i * 37) % 11) - 5}deg` } as CSSProperties}
                     >

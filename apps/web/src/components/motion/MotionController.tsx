@@ -38,7 +38,9 @@ export function MotionController() {
     );
     reveal.forEach((el) => io.observe(el));
 
-    const lenis = new Lenis({ autoRaf: true, anchors: true });
+    // stopInertiaOnNavigate: clicking a link to another page stops the glide at once. Without it the old
+    // instance keeps easing toward its target and drags the new page down to where the old one was.
+    const lenis = new Lenis({ autoRaf: true, anchors: true, stopInertiaOnNavigate: true });
 
     // Hold scroll until the hero books have landed (skipped when the page is restored mid-scroll).
     const heroItems = Array.from(document.querySelectorAll<HTMLElement>(".hero__item")).filter((el) => el.offsetParent !== null);

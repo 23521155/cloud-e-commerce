@@ -1,7 +1,5 @@
 import type { Metadata } from "next";
 import { IM_Fell_English } from "next/font/google";
-import { SiteFooter } from "@/components/layout/SiteFooter";
-import { SiteHeader } from "@/components/layout/SiteHeader";
 import "./globals.css";
 
 // Only a "latin" subset exists; it also covers the Vietnamese book titles via combining marks.
@@ -42,11 +40,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         >
           Skip to content
         </a>
-        <SiteHeader />
-        <main id="main" className="flex-1">
-          {children}
-        </main>
-        <SiteFooter />
+        {/* Each route group brings its own chrome: (shop) the side nav and footer, (admin) the admin sidebar */}
+        {children}
       </body>
     </html>
   );
