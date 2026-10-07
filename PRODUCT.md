@@ -32,7 +32,8 @@ Every copy is a single, specific object, described honestly by the shop that hol
 
 - Web: Next.js fullstack (`apps/web`); recommender service supplies "you may also like" suggestions.
 - Currency: VND and USD. How the currency is chosen (locale, toggle, shipping country) is undecided.
-- Undecided: payment provider and method, shipping options and costs, taxes, returns policy, and the sell-to-us flow. Do not show specific payment brands, shipping fees or delivery times until decided.
+- Payment methods offered at checkout (mock, no gateway wired yet; list in `apps/web/src/lib/payment.ts`): VietQR bank transfer, MoMo and cash on delivery for Vietnam (VND); card and PayPal from anywhere (USD). Which gateways back them is undecided.
+- Undecided: payment gateways, shipping options and costs, taxes, returns policy, and the sell-to-us flow. Do not show shipping fees or delivery times until decided.
 - Data is mocked (`apps/web/src/lib/catalogue.ts`) until the API and database are wired.
 
 ## Brand Commitments
