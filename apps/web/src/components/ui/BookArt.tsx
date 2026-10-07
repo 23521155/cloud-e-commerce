@@ -16,8 +16,8 @@ const COLOR_VARIANT: Record<string, BookVariant> = {
 type CoverProps = { title: string; author: string; color: string; className?: string };
 
 /** Front of a leather-bound book. Picks the photo variant closest to `color`. `plain` drops the lettering (for art behind headlines). */
-export function BookCover({ title, author, color, plain = false, className = "" }: CoverProps & { plain?: boolean }) {
-  return <Book title={title} author={author} variant={COLOR_VARIANT[color] ?? "forest"} plain={plain} className={className} />;
+export function BookCover({ title, author, color, plain = false, eager = false, className = "" }: CoverProps & { plain?: boolean; eager?: boolean }) {
+  return <Book title={title} author={author} variant={COLOR_VARIANT[color] ?? "forest"} plain={plain} eager={eager} className={className} />;
 }
 
 /** A cover photo on a transparent background. `tone` is unused and kept only for existing call sites. */

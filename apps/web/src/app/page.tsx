@@ -113,6 +113,7 @@ export default function Home() {
                 {item.kind === "cover" && (
                   <BookCover
                     plain={i === 0}
+                    eager
                     title={NEW_BOOKS[item.book].title}
                     author={NEW_BOOKS[item.book].author}
                     color={NEW_BOOKS[item.book].color}
