@@ -2423,6 +2423,104 @@
     line-height: 1.1;
   }
 
+  /* ---------- Orders: one library card per order ---------- */
+  .orders {
+    display: grid;
+    gap: clamp(44px, 5vw, 64px);
+    max-width: 960px;
+  }
+  .order {
+    position: relative;
+  }
+  .order:nth-child(even) {
+    rotate: -0.5deg;
+  }
+  /* Progress along the card: a ruled line, ink dots for steps done, the current one in red */
+  .order__track {
+    display: flex;
+    margin: 0 14px 18px;
+    padding: 18px 0 4px;
+    border-top: 1px solid var(--rule);
+    list-style: none;
+  }
+  .order__track li {
+    position: relative;
+    flex: 1;
+    display: grid;
+    justify-items: center;
+    gap: 8px;
+    text-align: center;
+  }
+  .order__track li + li::before {
+    content: "";
+    position: absolute;
+    top: 6px;
+    right: 50%;
+    left: -50%;
+    height: 2px;
+    background: var(--rule);
+  }
+  .order__track li:is(.is-done, .is-current)::before {
+    background: var(--ink);
+  }
+  .order__dot {
+    position: relative;
+    z-index: 1;
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--ink);
+    border-radius: 50%;
+    background: var(--color-parchment-100);
+  }
+  .is-done .order__dot {
+    background: var(--ink);
+  }
+  .is-current .order__dot {
+    border-color: var(--color-oxblood-700);
+    background: var(--color-oxblood-700);
+    box-shadow: 0 0 0 4px rgba(122, 38, 32, 0.18);
+  }
+  .order__step {
+    color: var(--color-ink-600);
+    font-size: 11px;
+  }
+  .is-done .order__step {
+    color: var(--ink);
+  }
+  .is-current .order__step {
+    color: var(--color-oxblood-700);
+  }
+  @media (max-width: 479px) {
+    .order__track {
+      margin-inline: 4px;
+    }
+    .order__step {
+      font-size: 9.5px;
+      letter-spacing: 0.06em;
+    }
+  }
+  /* Cancelled: the card fades and a double-ruled stamp is struck across it */
+  .order--cancelled .lib-card__frame {
+    opacity: 0.6;
+    filter: grayscale(0.5);
+  }
+  .order__void {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    padding: 4px 24px;
+    border: 4px double var(--color-oxblood-700);
+    color: var(--color-oxblood-700);
+    font-family: var(--font-serif);
+    font-size: clamp(2rem, 5vw, 3.6rem);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    translate: -50% -50%;
+    rotate: -14deg;
+    opacity: 0.85;
+    pointer-events: none;
+  }
+
   /* ---------- Cream sections ---------- */
   .cream {
     background: var(--color-parchment-200);
