@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Form from "next/form";
 import Link from "next/link";
 import { MotionController } from "@/components/motion/MotionController";
 import { BookPhoto } from "@/components/ui/BookArt";
@@ -81,7 +82,8 @@ export default async function CataloguePage({ searchParams }: PageProps<"/catalo
           </p>
         </div>
 
-        <form className="catalogue__search" action="/catalogue" role="search" aria-label="Search the catalogue">
+        {/* Search and filters keep the scroll position: the reader stays by the shelf instead of jumping to the top */}
+        <Form className="catalogue__search" action="/catalogue" scroll={false} role="search" aria-label="Search the catalogue">
           {subject && <input type="hidden" name="subject" value={subject} />}
           {rare && <input type="hidden" name="rare" value="1" />}
           {sort !== "new" && <input type="hidden" name="sort" value={sort} />}
@@ -102,7 +104,7 @@ export default async function CataloguePage({ searchParams }: PageProps<"/catalo
               className="catalogue__input"
             />
             {q && (
-              <Link href={href({ q: "" })} className="catalogue__clear small-upper under-hover">
+              <Link href={href({ q: "" })} scroll={false} className="catalogue__clear small-upper under-hover">
                 Clear
               </Link>
             )}
@@ -110,18 +112,18 @@ export default async function CataloguePage({ searchParams }: PageProps<"/catalo
               Find
             </button>
           </div>
-        </form>
+        </Form>
 
         <nav className="catalogue__filters" aria-label="Filter the catalogue">
           <ul className="catalogue__row" aria-label="Subject">
             <li>
-              <Link href={href({ subject: null })} className={`catalogue__chip ${!subject ? "is-active" : ""}`} aria-current={!subject ? "true" : undefined}>
+              <Link href={href({ subject: null })} scroll={false} className={`catalogue__chip ${!subject ? "is-active" : ""}`} aria-current={!subject ? "true" : undefined}>
                 All subjects
               </Link>
             </li>
             {SUBJECTS.map((s) => (
               <li key={s.slug}>
-                <Link href={href({ subject: s.slug })} className={`catalogue__chip ${subject === s.slug ? "is-active" : ""}`} aria-current={subject === s.slug ? "true" : undefined}>
+                <Link href={href({ subject: s.slug })} scroll={false} className={`catalogue__chip ${subject === s.slug ? "is-active" : ""}`} aria-current={subject === s.slug ? "true" : undefined}>
                   {s.name}
                 </Link>
               </li>
@@ -130,7 +132,7 @@ export default async function CataloguePage({ searchParams }: PageProps<"/catalo
               ❦
             </li>
             <li>
-              <Link href={href({ rare: !rare })} className={`catalogue__chip ${rare ? "is-active" : ""}`} aria-current={rare ? "true" : undefined}>
+              <Link href={href({ rare: !rare })} scroll={false} className={`catalogue__chip ${rare ? "is-active" : ""}`} aria-current={rare ? "true" : undefined}>
                 Rare only
               </Link>
             </li>
@@ -142,6 +144,7 @@ export default async function CataloguePage({ searchParams }: PageProps<"/catalo
               <li key={o.key}>
                 <Link
                   href={href({ sort: o.key })}
+                  scroll={false}
                   className={`small-upper under-hover ${sort === o.key ? "text-gold-300" : "text-parchment-200"}`}
                   aria-current={sort === o.key ? "true" : undefined}
                 >
