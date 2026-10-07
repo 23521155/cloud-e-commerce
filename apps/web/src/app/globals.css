@@ -185,7 +185,10 @@
   .bubble,
   .catalogue__chip,
   .catalogue__stamp,
-  .work-card__client {
+  .work-card__client,
+  .admin__chip,
+  .admin__badge,
+  .admin__tag {
     --rough-fill: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 50' preserveAspectRatio='none'%3E%3Cfilter id='r' x='-5%' y='-30%' width='110%' height='160%'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.03 .14' numOctaves='3' seed='7' result='n'/%3E%3CfeDisplacementMap in='SourceGraphic' in2='n' scale='7'/%3E%3C/filter%3E%3Crect x='7' y='7' width='186' height='36' rx='3' fill='%23000' filter='url(%23r)'/%3E%3C/svg%3E");
     --rough-oval: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 50' preserveAspectRatio='none'%3E%3Cfilter id='r' x='-5%' y='-30%' width='110%' height='160%'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.03 .14' numOctaves='3' seed='7' result='n'/%3E%3CfeDisplacementMap in='SourceGraphic' in2='n' scale='7'/%3E%3C/filter%3E%3Crect x='7' y='7' width='186' height='36' rx='60' ry='18' fill='%23000' filter='url(%23r)'/%3E%3C/svg%3E");
     --rough-ring: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 50' preserveAspectRatio='none'%3E%3Cfilter id='r' x='-5%' y='-30%' width='110%' height='160%'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.03 .14' numOctaves='3' seed='7' result='n'/%3E%3CfeDisplacementMap in='SourceGraphic' in2='n' scale='7'/%3E%3C/filter%3E%3Crect x='8' y='8' width='184' height='34' rx='3' fill='none' stroke='%23000' stroke-width='1.6' filter='url(%23r)'/%3E%3C/svg%3E");
@@ -2567,6 +2570,772 @@
     text-transform: uppercase;
     translate: -50% -50%;
     rotate: -14deg;
+  }
+
+  /* ---------- Admin: walnut sidebar, parchment desk ---------- */
+  /* The shop's side nav is not rendered here, so drop the room kept for it */
+  body:has(.admin) {
+    padding: 0;
+    background: var(--color-parchment-100);
+  }
+  body:has(.admin-login) {
+    padding: 0;
+  }
+  /* Staff sign-in: one index card on the walnut, no shop or admin chrome */
+  .admin-login {
+    display: grid;
+    flex: 1;
+    place-items: center;
+    padding: clamp(32px, 6vw, 72px) 16px;
+    background:
+      radial-gradient(ellipse at 50% 30%, rgba(168, 116, 63, 0.14), transparent 60%),
+      var(--color-walnut-900);
+  }
+  .admin-login__inner {
+    display: grid;
+    justify-items: center;
+    gap: 28px;
+    width: min(100%, 440px);
+  }
+  .admin-login__brand {
+    transition: opacity 200ms;
+  }
+  .admin-login__brand:hover {
+    opacity: 0.8;
+  }
+  .admin-login__card {
+    width: 100%;
+    padding-bottom: 28px;
+  }
+  .admin-login__card :where(a, button, input):focus-visible {
+    outline-color: var(--color-oxblood-700);
+  }
+  .admin-login__title {
+    margin: 22px 0 24px;
+    color: var(--color-forest-800);
+    font-family: var(--font-serif);
+    font-size: clamp(1.7rem, 4vw, 2.2rem);
+    font-weight: 400;
+    line-height: 1.1;
+  }
+  .admin-login__title em {
+    color: var(--color-oxblood-700);
+  }
+  .admin-login__help {
+    margin: 22px 0 0;
+    color: var(--color-ink-600);
+    font-size: 15px;
+    font-style: italic;
+  }
+  .admin-login__out {
+    color: var(--color-parchment-200);
+  }
+  .admin-login__out:focus-visible {
+    outline: 2px solid var(--color-gold-400);
+    outline-offset: 2px;
+  }
+  .admin {
+    display: grid;
+    min-height: 100svh;
+  }
+  .admin :where(a, button):focus-visible {
+    outline: 2px solid var(--color-oxblood-700);
+    outline-offset: 2px;
+  }
+  .admin__side {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px 20px;
+    padding: 14px 16px;
+    background: var(--color-walnut-900);
+    color: var(--color-parchment-100);
+  }
+  .admin__side :where(a):focus-visible {
+    outline-color: var(--color-gold-400);
+  }
+  .admin__brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--color-gold-400);
+    font-family: var(--font-serif);
+    font-size: 18px;
+    line-height: 1.1;
+  }
+  .admin__brand em {
+    display: block;
+    color: var(--color-parchment-200);
+    font-size: 14px;
+  }
+  .admin__nav {
+    display: flex;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .admin__link {
+    display: block;
+    padding: 9px 14px;
+    border-radius: 3px;
+    color: var(--color-parchment-200);
+    font-family: var(--font-serif);
+    font-size: 17px;
+    transition: background-color 200ms, color 200ms;
+  }
+  .admin__link:hover {
+    background: rgba(241, 226, 200, 0.07);
+    color: var(--color-parchment-50);
+  }
+  .admin__link.is-active {
+    background: rgba(211, 167, 112, 0.16);
+    color: var(--color-gold-300);
+  }
+  .admin__out {
+    margin-left: auto;
+    color: var(--color-parchment-200);
+  }
+  @media (min-width: 900px) {
+    .admin {
+      grid-template-columns: 236px minmax(0, 1fr);
+    }
+    .admin__side {
+      position: sticky;
+      top: 0;
+      height: 100svh;
+      flex-direction: column;
+      flex-wrap: nowrap;
+      align-items: stretch;
+      gap: 0;
+      padding: 28px 20px;
+    }
+    .admin__nav {
+      flex-direction: column;
+      margin-top: 40px;
+    }
+    .admin__out {
+      margin: auto 0 0;
+      padding: 0 14px;
+    }
+  }
+  .admin__desk {
+    min-width: 0;
+    overflow-x: clip;
+    background: var(--color-parchment-100);
+    color: var(--color-walnut-900);
+  }
+  .admin__desk ::selection {
+    background: rgba(122, 38, 32, 0.2);
+  }
+  .admin__page {
+    display: grid;
+    /* minmax(0) keeps the wide offers table scrolling inside its box instead of widening the page */
+    grid-template-columns: minmax(0, 1fr);
+    gap: clamp(36px, 4vw, 52px);
+    max-width: 1180px;
+    padding: clamp(24px, 4vw, 52px) clamp(16px, 4vw, 52px) 80px;
+  }
+  .admin__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 6px 24px;
+    padding-bottom: 14px;
+    border-bottom: 1.5px solid var(--color-walnut-900);
+  }
+  .admin__title {
+    margin: 0;
+    color: var(--color-forest-800);
+    font-family: var(--font-serif);
+    font-size: clamp(2.2rem, 4vw, 3.4rem);
+    font-weight: 400;
+    line-height: 1;
+  }
+  .admin__date {
+    margin: 0;
+    color: var(--color-ink-600);
+    font-style: italic;
+  }
+  .admin__h2 {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin: 0 0 14px;
+    font-family: var(--font-serif);
+    font-size: clamp(1.35rem, 2vw, 1.7rem);
+    font-weight: 400;
+  }
+  .admin__count {
+    color: var(--color-oxblood-700);
+    font-size: 15px;
+    font-variant-numeric: tabular-nums;
+  }
+  /* To-do: one ruled line per task, the oldest on top */
+  .admin__tasks {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border-top: 1.5px solid var(--color-walnut-900);
+  }
+  /* Each task reads "who · what", with its reference and age to the side and a way in */
+  .admin__tasks li {
+    display: grid;
+    grid-template-columns: 64px minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 6px 20px;
+    padding: 14px 2px;
+    border-bottom: 1px solid rgba(94, 67, 48, 0.22);
+  }
+  .admin__tag {
+    justify-self: start;
+  }
+  .admin__task {
+    display: grid;
+    gap: 2px;
+  }
+  .admin__who {
+    font-family: var(--font-serif);
+    font-size: 19px;
+  }
+  .admin__task-meta {
+    display: grid;
+    justify-items: end;
+    color: var(--color-ink-600);
+    font-size: 14px;
+    font-style: italic;
+    white-space: nowrap;
+  }
+  .admin__open {
+    color: var(--color-oxblood-700);
+  }
+  @media (max-width: 639px) {
+    .admin__tasks li {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+    .admin__task {
+      grid-column: 1 / -1;
+      grid-row: 2;
+    }
+    .admin__task-meta {
+      grid-row: 3;
+      justify-items: start;
+    }
+    .admin__open {
+      grid-row: 3;
+    }
+  }
+  .admin__panel {
+    display: grid;
+    align-content: start;
+  }
+  .admin__more {
+    justify-self: start;
+    margin-top: 16px;
+    color: var(--color-oxblood-700);
+  }
+  /* Search and filter chips above a table */
+  .admin__filters {
+    display: grid;
+    gap: 16px;
+  }
+  /* Search: a ruled ledger line written on in serif, with the catalogue's rubber stamp to press */
+  .admin__search {
+    display: grid;
+    gap: 2px;
+    max-width: 580px;
+  }
+  .admin__search-label {
+    color: var(--color-oxblood-700);
+    font-size: 12px;
+  }
+  .admin__search-line {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding-right: 6px;
+    border-bottom: 1.5px solid rgba(94, 67, 48, 0.45);
+    transition: border-color 200ms, box-shadow 200ms;
+  }
+  .admin__search-line:focus-within {
+    border-bottom-color: var(--color-walnut-900);
+    box-shadow: 0 1px 0 var(--color-walnut-900);
+  }
+  .admin__input {
+    flex: 1;
+    min-width: 0;
+    height: 48px;
+    padding: 0 2px;
+    border: 0;
+    background: transparent;
+    color: var(--color-walnut-900);
+    font-family: var(--font-serif);
+    font-size: clamp(1.1rem, 1.6vw, 1.35rem);
+    caret-color: var(--color-oxblood-700);
+  }
+  .admin__input::placeholder {
+    color: var(--color-ink-600);
+    opacity: 0.6;
+    font-style: italic;
+  }
+  .admin__input:focus-visible {
+    outline: none;
+  }
+  .admin__input::-webkit-search-cancel-button {
+    display: none;
+  }
+  .admin__clear {
+    color: var(--color-oxblood-700);
+  }
+  /* Filter chips: an inked rough ring; the chosen one is the shop's rust brush fill */
+  .admin__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 14px;
+    margin: 0;
+    padding: 4px 4px 0;
+    list-style: none;
+  }
+  .admin__chip {
+    --btn-mask: var(--rough-ring);
+    position: relative;
+    isolation: isolate;
+    display: inline-flex;
+    align-items: center;
+    min-height: 38px;
+    padding: 0 18px;
+    color: var(--color-walnut-800);
+    font-family: var(--font-serif);
+    font-size: 13px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    transition: color 250ms var(--ease-out-expo);
+  }
+  .admin__chip::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    inset: -2px -4px;
+    background: currentColor;
+    opacity: 0.5;
+    -webkit-mask: var(--btn-mask) center / 100% 100% no-repeat;
+    mask: var(--btn-mask) center / 100% 100% no-repeat;
+    transition: opacity 250ms, transform 250ms var(--ease-out-expo);
+  }
+  .admin__chip:hover {
+    color: var(--color-oxblood-700);
+  }
+  .admin__chip:hover::before {
+    opacity: 1;
+    transform: rotate(-0.8deg);
+  }
+  .admin__chip.is-active {
+    --btn-mask: var(--rough-fill);
+    color: var(--color-parchment-100);
+  }
+  .admin__chip.is-active::before {
+    opacity: 1;
+    background:
+      linear-gradient(100deg, rgba(255, 255, 255, 0.1), rgba(0, 0, 0, 0.12)),
+      linear-gradient(#a8542f, #8f3f22);
+  }
+  /* Status badges are small hand stamps: a rough inked ring in the stage's ink, pressed a little askew */
+  .admin__badge,
+  .admin__tag {
+    --btn-mask: var(--rough-ring);
+    position: relative;
+    isolation: isolate;
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    padding: 0 10px;
+    font-family: var(--font-serif);
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    rotate: -2deg;
+  }
+  :is(.admin__badge, .admin__tag)::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    inset: -2px -3px;
+    background: currentColor;
+    -webkit-mask: var(--btn-mask) center / 100% 100% no-repeat;
+    mask: var(--btn-mask) center / 100% 100% no-repeat;
+  }
+  :is(tr, li):nth-child(even) :is(.admin__badge, .admin__tag) {
+    rotate: 1.5deg;
+  }
+  .admin__badge--placed {
+    color: var(--color-gold-800);
+  }
+  .admin__badge--paid,
+  .admin__badge--new {
+    color: var(--color-oxblood-700);
+  }
+  .admin__badge--packed,
+  .admin__badge--shipped {
+    color: var(--color-forest-800);
+  }
+  .admin__badge--delivered {
+    color: var(--color-ink-600);
+  }
+  .admin__badge--cancelled {
+    color: var(--color-ink-600);
+    text-decoration: line-through;
+  }
+  .admin__tag--order {
+    color: var(--color-forest-800);
+  }
+  .admin__tag--offer {
+    color: var(--color-oxblood-700);
+  }
+  .admin__ref {
+    color: var(--color-ink-600);
+    font-size: 15px;
+    font-variant-numeric: tabular-nums;
+  }
+  .admin__what {
+    color: var(--color-ink-600);
+    font-family: var(--font-serif);
+    font-size: 16px;
+  }
+  .admin__empty,
+  .admin__note {
+    margin: 12px 0 0;
+    color: var(--color-ink-600);
+    font-style: italic;
+  }
+  .admin__pair {
+    display: grid;
+    gap: clamp(36px, 4vw, 52px);
+  }
+  @media (min-width: 900px) {
+    .admin__pair {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+  }
+  .admin__table {
+    width: 100%;
+    border-collapse: collapse;
+    font-variant-numeric: tabular-nums;
+  }
+  .admin__table :is(th, td) {
+    padding: 11px 12px;
+    border-bottom: 1px solid rgba(94, 67, 48, 0.22);
+    text-align: left;
+    vertical-align: top;
+  }
+  .admin__table :is(th, td):first-child {
+    padding-left: 0;
+  }
+  .admin__table :is(th, td):last-child {
+    padding-right: 0;
+  }
+  .admin__table thead th {
+    border-bottom: 1.5px solid var(--color-walnut-900);
+    color: var(--color-ink-600);
+    font-size: 11px;
+    font-weight: 400;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+  .admin__table tbody th {
+    font-family: var(--font-serif);
+    font-size: 17px;
+    font-weight: 400;
+  }
+  .admin__table .is-num {
+    text-align: right;
+    white-space: nowrap;
+  }
+  .admin__table tr.is-zero {
+    color: var(--color-ink-600);
+  }
+  .admin__scroll {
+    overflow-x: auto;
+  }
+  .admin__table--wide {
+    min-width: 820px;
+  }
+  .admin__sub {
+    display: block;
+    color: var(--color-ink-600);
+    font-family: var(--font-serif);
+    font-size: 14px;
+    font-style: italic;
+  }
+  .admin__faults {
+    max-width: 34ch;
+    font-style: italic;
+  }
+  .admin__facts {
+    margin: 0;
+    border-top: 1.5px solid var(--color-walnut-900);
+  }
+  .admin__facts > div {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(94, 67, 48, 0.22);
+  }
+  .admin__facts dt {
+    color: var(--color-ink-600);
+  }
+  .admin__facts dd {
+    margin: 0;
+    font-family: var(--font-serif);
+    font-size: 20px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---------- Admin charts: thin ink marks on a paper card ---------- */
+  .admin__charts {
+    display: grid;
+    gap: 20px;
+  }
+  @media (min-width: 900px) {
+    .admin__charts {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+    .admin__chart-card--wide {
+      grid-column: 1 / -1;
+    }
+  }
+  .admin__chart-card {
+    --surface: var(--color-parchment-50);
+    min-width: 0;
+    padding: 20px 22px 16px;
+    border: 1px solid rgba(94, 67, 48, 0.18);
+    border-radius: 4px;
+    background: var(--surface);
+  }
+  .chart {
+    display: grid;
+    gap: 18px;
+    margin: 0;
+  }
+  .chart__title {
+    display: grid;
+    gap: 2px;
+    font-family: var(--font-serif);
+    font-size: 19px;
+  }
+  .chart__sub {
+    color: var(--color-ink-600);
+    font-size: 14px;
+    font-style: italic;
+  }
+  .chart [tabindex]:focus-visible {
+    outline: 2px solid var(--color-oxblood-700);
+    outline-offset: 2px;
+  }
+  /* Tooltip: the mark's own value, on hover or keyboard focus */
+  .chart [data-tip] {
+    position: relative;
+    cursor: default;
+  }
+  .chart [data-tip]::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    z-index: 2;
+    padding: 6px 10px;
+    border-radius: 3px;
+    background: var(--color-walnut-900);
+    color: var(--color-parchment-50);
+    font-family: var(--font-serif);
+    font-size: 13px;
+    white-space: nowrap;
+    translate: -50% 0;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 150ms;
+  }
+  .chart [data-tip]:is(:hover, :focus-visible)::after {
+    opacity: 1;
+  }
+  /* Edge marks open their tooltip inward so it never runs off the card */
+  .chart__col-slot:nth-child(-n + 3) [data-tip]::after {
+    left: 0;
+    translate: none;
+  }
+  .chart__col-slot:nth-last-child(-n + 3) [data-tip]::after,
+  .chart__seg:last-child::after {
+    right: 0;
+    left: auto;
+    translate: none;
+  }
+  .chart :is(.chart__bar, .chart__col):hover {
+    background: var(--color-forest-700);
+  }
+  /* Horizontal bars: label, bar from a square baseline to a rounded end, value at the tip */
+  .chart__bars {
+    display: grid;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .chart__bar-row {
+    display: grid;
+    grid-template-columns: 92px minmax(0, 1fr);
+    align-items: center;
+    gap: 12px;
+  }
+  .chart__bar-label {
+    color: var(--color-ink-600);
+    font-size: 15px;
+  }
+  .chart__bar-track {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    border-left: 1px solid rgba(94, 67, 48, 0.5);
+  }
+  .chart__bar {
+    flex: none;
+    width: calc((100% - 32px) * var(--f));
+    height: 14px;
+    border-radius: 0 4px 4px 0;
+    background: var(--color-forest-800);
+  }
+  .chart__bar-value {
+    font-size: 15px;
+    font-variant-numeric: tabular-nums;
+  }
+  .chart__bar-track > .chart__bar-value:only-child {
+    padding-left: 6px;
+    color: var(--color-ink-600);
+  }
+  /* Columns: one value axis with hairline gridlines, labels in the left gutter */
+  .chart__plot {
+    position: relative;
+    height: 200px;
+    margin-bottom: 24px;
+    padding-left: 44px;
+  }
+  .chart__grid {
+    position: absolute;
+    inset: 0 0 0 44px;
+    pointer-events: none;
+  }
+  .chart__tick {
+    position: absolute;
+    right: 0;
+    bottom: var(--y);
+    left: 0;
+    border-top: 1px solid rgba(94, 67, 48, 0.14);
+  }
+  .chart__tick:first-child {
+    border-top-color: rgba(94, 67, 48, 0.5);
+  }
+  .chart__tick > span {
+    position: absolute;
+    right: calc(100% + 8px);
+    color: var(--color-ink-600);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    translate: 0 -50%;
+  }
+  .chart__cols {
+    position: relative;
+    display: flex;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .chart__col-slot {
+    position: relative;
+    display: flex;
+    flex: 1;
+    align-items: flex-end;
+    justify-content: center;
+  }
+  .chart__col {
+    width: min(24px, 64%);
+    height: var(--h);
+    border-radius: 4px 4px 0 0;
+    background: var(--color-forest-800);
+  }
+  .chart__peak {
+    position: absolute;
+    bottom: calc(100% + 4px);
+    left: 50%;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    translate: -50% 0;
+  }
+  .chart__x {
+    position: absolute;
+    top: calc(100% + 6px);
+    color: var(--color-ink-600);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  /* Part-to-whole: one bar, segments split by 2px of the card's own paper */
+  .chart__stack {
+    display: flex;
+    gap: 2px;
+    height: 22px;
+    background: var(--surface);
+  }
+  .chart__seg {
+    flex-basis: 0;
+    background: var(--c);
+  }
+  .chart__seg:first-child {
+    border-radius: 4px 0 0 4px;
+  }
+  .chart__seg:last-child {
+    border-radius: 0 4px 4px 0;
+  }
+  .chart__seg:only-child {
+    border-radius: 4px;
+  }
+  .chart__legend {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .chart__legend li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 15px;
+  }
+  .chart__swatch {
+    flex: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    background: var(--c);
+  }
+  .chart__legend-value {
+    margin-left: auto;
+    color: var(--color-ink-600);
+    font-variant-numeric: tabular-nums;
+  }
+  .chart__table summary {
+    width: fit-content;
+    color: var(--color-oxblood-700);
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .chart__table .admin__table {
+    margin-top: 8px;
   }
 
   /* ---------- Cream sections ---------- */
