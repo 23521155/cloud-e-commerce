@@ -2323,6 +2323,106 @@
     outline-color: var(--color-oxblood-700);
   }
 
+  /* ---------- Sell to us ---------- */
+  .sell__layout {
+    display: grid;
+    gap: clamp(36px, 5vw, 64px);
+    align-items: start;
+  }
+  @media (min-width: 960px) {
+    .sell__layout {
+      grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+    }
+    .sell__aside {
+      position: sticky;
+      top: 96px;
+    }
+  }
+  /* How it works: the order matters, so the numbers stay, set as gold figures */
+  .sell__steps {
+    display: grid;
+    gap: clamp(22px, 2.6vw, 32px);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    counter-reset: step;
+  }
+  .sell__steps li {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: 18px;
+    counter-increment: step;
+  }
+  .sell__steps li::before {
+    content: counter(step);
+    grid-row: span 2;
+    color: var(--color-gold-400);
+    font-family: var(--font-serif);
+    font-size: clamp(2.4rem, 3.4vw, 3.2rem);
+    font-style: italic;
+    line-height: 0.9;
+  }
+  .sell__step-title {
+    color: var(--color-parchment-100);
+    font-family: var(--font-serif);
+    font-size: clamp(1.2rem, 1.6vw, 1.45rem);
+  }
+  .sell__step-text {
+    max-width: 34ch;
+    margin-top: 4px;
+    color: var(--color-parchment-200);
+    line-height: 1.5;
+  }
+  .sell__notes {
+    height: auto;
+    min-height: 92px;
+    padding-top: 8px;
+    line-height: 1.45;
+    resize: vertical;
+  }
+  /* Native file input is hidden (it speaks the browser's language); this is its English face */
+  .sell__file {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 14px;
+    padding: 10px 0 4px;
+    cursor: pointer;
+  }
+  .sell__file-btn {
+    padding: 9px 16px;
+    border: 1.5px solid rgba(94, 67, 48, 0.4);
+    border-radius: 4px;
+    background: var(--color-parchment-50);
+    color: var(--color-walnut-900);
+    font-size: 13px;
+    transition: border-color 200ms;
+  }
+  .sell__file:hover .sell__file-btn {
+    border-color: var(--color-oxblood-700);
+  }
+  .sell__file:has(input:focus-visible) .sell__file-btn {
+    outline: 2px solid var(--color-oxblood-700);
+    outline-offset: 2px;
+  }
+  .sell__file-status {
+    color: var(--color-ink-600);
+    font-family: var(--font-serif);
+    font-size: 15px;
+    font-style: italic;
+  }
+  .sell__sent {
+    padding-bottom: 36px;
+  }
+  .sell__sent-title {
+    margin: 24px 0 12px;
+    color: var(--color-forest-800);
+    font-family: var(--font-serif);
+    font-size: clamp(1.8rem, 3vw, 2.6rem);
+    font-weight: 400;
+    line-height: 1.1;
+  }
+
   /* ---------- Cream sections ---------- */
   .cream {
     background: var(--color-parchment-200);
