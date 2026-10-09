@@ -12,6 +12,9 @@ type Config struct {
 	AppName string
 
 	Port string
+
+	// DatabaseURL is a sqlserver:// URL, also used by golang-migrate.
+	DatabaseURL string
 }
 
 // Load reads environment variables (via a .env file) into a Config.
@@ -27,6 +30,8 @@ func Load() (*Config, error) {
 		AppName: getEnv("APP_NAME", "catalog-service"),
 
 		Port: getEnv("PORT", "8083"),
+
+		DatabaseURL: os.Getenv("DATABASE_URL"),
 	}
 
 	return cfg, nil
