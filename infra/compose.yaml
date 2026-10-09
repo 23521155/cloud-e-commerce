@@ -28,7 +28,7 @@ services:
     image: prom/prometheus:latest
     restart: unless-stopped
     volumes:
-      - ../api-gateway/deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ../apps/api-gateway/deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus-data:/prometheus
     ports:
       - "${PROMETHEUS_PORT:-9090}:9090"
@@ -61,7 +61,7 @@ services:
     image: grafana/promtail:3.0.0
     restart: unless-stopped
     volumes:
-      - ../api-gateway/deploy/loki/promtail-config.yml:/etc/promtail/config.yml
+      - ../apps/api-gateway/deploy/loki/promtail-config.yml:/etc/promtail/config.yml
       - gateway-logs:/logs
     command: -config.file=/etc/promtail/config.yml
     depends_on:
