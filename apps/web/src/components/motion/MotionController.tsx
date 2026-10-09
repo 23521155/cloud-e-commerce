@@ -71,6 +71,15 @@ export function MotionController() {
     };
     window.addEventListener("of:scroll-lock", onScrollLock);
 
+    // A page asks for a glide to one of its elements (detail: a selector). Cancelling the event tells
+    // the sender it was handled; it is not when the intro still holds the scroll.
+    const onScrollTo = (e: Event) => {
+      if (!introDone) return;
+      e.preventDefault();
+      lenis.scrollTo((e as CustomEvent<string>).detail);
+    };
+    window.addEventListener("of:scroll-to", onScrollTo);
+
     const speedEls = Array.from(document.querySelectorAll<HTMLElement>("[data-speed]"));
     const mouseEls = Array.from(document.querySelectorAll<HTMLElement>("[data-mouse]"));
     const progressEls = Array.from(document.querySelectorAll<HTMLElement>("[data-progress]"));
@@ -118,6 +127,7 @@ export function MotionController() {
       cancelAnimationFrame(frame);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("of:scroll-lock", onScrollLock);
+      window.removeEventListener("of:scroll-to", onScrollTo);
       window.clearTimeout(introTimer);
       heroItems.forEach((el) => el.removeEventListener("animationend", onLanded));
       io.disconnect();
