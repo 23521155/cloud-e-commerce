@@ -20,9 +20,9 @@ export default async function CartPage({ searchParams }: PageProps<"/cart">) {
   // ?empty=1 previews the empty state until the basket has real state
   const empty = first(sp.empty) === "1";
 
-  const lines = empty ? [] : getBasket();
+  const lines = empty ? [] : await getBasket();
   const total = subtotal(lines);
-  const more = suggestions(lines);
+  const more = await suggestions(lines);
 
 
   return (

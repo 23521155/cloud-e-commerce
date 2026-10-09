@@ -19,8 +19,7 @@ export default async function AdminOrdersPage({ searchParams }: PageProps<"/admi
   const status = ORDER_STATUSES.find((s) => s === first(sp.status)) as OrderStatus | undefined;
   const q = (first(sp.q) ?? "").trim().slice(0, 80);
 
-  const total = getShopOrders().length;
-  const orders = queryShopOrders({ q, status });
+  const [total, orders] = await Promise.all([getShopOrders().then((o) => o.length), queryShopOrders({ q, status })]);
 
   const href = (next: { status?: OrderStatus | null; q?: string }) => {
     const params = new URLSearchParams();

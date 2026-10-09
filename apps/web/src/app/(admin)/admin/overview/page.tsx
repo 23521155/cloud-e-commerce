@@ -11,9 +11,8 @@ const day = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" })
 const today = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
 /** Admin landing: who is waiting on the shop and for what, then a short count of each section. */
-export default function AdminOverviewPage() {
-  const tasks = getTasks();
-  const counts = overviewCounts();
+export default async function AdminOverviewPage() {
+  const [tasks, counts, revenue, statuses, payments] = await Promise.all([getTasks(), overviewCounts(), revenueChart(), statusChart(), paymentChart()]);
 
   return (
     <div className="admin__page">
@@ -52,13 +51,13 @@ export default function AdminOverviewPage() {
 
       <section className="admin__charts" aria-label="Charts">
         <div className="admin__chart-card admin__chart-card--wide">
-          <RevenueChart data={revenueChart()} />
+          <RevenueChart data={revenue} />
         </div>
         <div className="admin__chart-card">
-          <StatusChart data={statusChart()} />
+          <StatusChart data={statuses} />
         </div>
         <div className="admin__chart-card">
-          <PaymentChart data={paymentChart()} />
+          <PaymentChart data={payments} />
         </div>
       </section>
 

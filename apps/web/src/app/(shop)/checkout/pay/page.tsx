@@ -25,7 +25,7 @@ export default async function PayPage({ searchParams }: PageProps<"/checkout/pay
   if (!method || method.flow !== "gateway") redirect("/checkout");
 
   const step = STEPS[method.id];
-  const total = subtotal(getBasket().filter((l) => !l.sold));
+  const total = subtotal((await getBasket()).filter((l) => !l.sold));
 
   return (
     <section className="work basket" aria-labelledby="pay-title">

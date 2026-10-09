@@ -1,5 +1,5 @@
 // Placeholder order history until orders are stored (DB). Every line is a single copy.
-import { getBook, type Book } from "@/lib/catalogue";
+import { getBooks, type Book } from "@/lib/catalogue";
 import type { PaymentMethodId } from "@/lib/payment";
 
 export type OrderStatus = "placed" | "paid" | "packed" | "shipped" | "delivered" | "cancelled";
@@ -14,21 +14,27 @@ export type Order = {
 };
 
 const MOCK: { id: string; placed: string; status: OrderStatus; payment: PaymentMethodId; slugs: string[] }[] = [
-  { id: "MA-0147", placed: "2026-10-03", status: "shipped", payment: "vietqr", slugs: ["the-little-prince", "heidi"] },
-  { id: "MA-0139", placed: "2026-09-28", status: "placed", payment: "cod", slugs: ["mythology"] },
-  { id: "MA-0121", placed: "2026-09-12", status: "delivered", payment: "momo", slugs: ["the-razors-edge", "pavilion-of-women", "hiroshima"] },
-  { id: "MA-0102", placed: "2026-08-30", status: "cancelled", payment: "vietqr", slugs: ["marigold-garden"] },
+  { id: "MA-0147", placed: "2026-10-03", status: "shipped", payment: "vietqr", slugs: ["heidi-b00087e21s", "hiroshima-john-hersey-b00b0k8hzy"] },
+  { id: "MA-0139", placed: "2026-09-28", status: "placed", payment: "cod", slugs: ["mythology-b000eehz9g"] },
+  { id: "MA-0121", placed: "2026-09-12", status: "delivered", payment: "momo", slugs: ["the-razors-edge-b0007izgh2", "pavilion-of-women-b0006aqxl4", "hiroshima-b00005w19o"] },
+  { id: "MA-0102", placed: "2026-08-30", status: "cancelled", payment: "vietqr", slugs: ["marigold-garden-pictures-and-rhymes-b00085szfy"] },
 ];
 
-/** Newest first */
-export function getOrders(): Order[] {
-  return MOCK.map(({ slugs, ...order }) => ({
+/** Attach the catalogue books to mock orders, fetching every slug with one request. */
+export async function withBooks<T extends { slugs: string[] }>(orders: T[]): Promise<(Omit<T, "slugs"> & { books: Book[] })[]> {
+  const books = new Map((await getBooks(orders.flatMap((o) => o.slugs))).map((b) => [b.slug, b]));
+  return orders.map(({ slugs, ...order }) => ({
     ...order,
     books: slugs.flatMap((slug) => {
-      const book = getBook(slug);
+      const book = books.get(slug);
       return book ? [book] : [];
     }),
   }));
+}
+
+/** Newest first */
+export async function getOrders(): Promise<Order[]> {
+  return withBooks(MOCK);
 }
 
 /** Status filters shown above the list; "open" is everything not yet delivered or cancelled. */
@@ -51,10 +57,10 @@ export const ORDER_SORTS = [
 export type OrderSort = (typeof ORDER_SORTS)[number]["key"];
 
 /** Search by order number, title or author, narrow by status, then order by date placed. */
-export function queryOrders({ q = "", status, sort = "newest" }: { q?: string; status?: OrderFilter; sort?: OrderSort }): Order[] {
+export async function queryOrders({ q = "", status, sort = "newest" }: { q?: string; status?: OrderFilter; sort?: OrderSort }): Promise<Order[]> {
   const needle = q.trim().toLowerCase();
   const dir = sort === "oldest" ? 1 : -1;
-  return getOrders()
+  return (await getOrders())
     .filter(
       (o) =>
         matchesFilter(o, status) &&

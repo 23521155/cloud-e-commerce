@@ -1,8 +1,7 @@
 // Admin data. Mock until the API and database exist. The shop sees every reader's orders: the
 // signed-in reader's mock orders (lib/orders) plus other readers', each with who placed it.
 // Names are unaccented: the display face does not render Vietnamese diacritics reliably.
-import { getBook } from "@/lib/catalogue";
-import { getOrders, orderTotal, type Order, type OrderStatus } from "@/lib/orders";
+import { getOrders, orderTotal, withBooks, type Order, type OrderStatus } from "@/lib/orders";
 import { PAYMENT_METHODS, type PaymentMethodId } from "@/lib/payment";
 
 export type Person = { name: string; email: string };
@@ -13,23 +12,17 @@ export type ShopOrder = Order & { customer: Person };
 const READER: Person = { name: "Nguyen Van An", email: "an.nguyen@example.com" };
 
 const OTHER_ORDERS: { id: string; placed: string; status: OrderStatus; payment: PaymentMethodId; slugs: string[]; customer: Person }[] = [
-  { id: "MA-0151", placed: "2026-10-06", status: "paid", payment: "momo", slugs: ["jamaica-inn"], customer: { name: "Tran Minh Thu", email: "thu.tran@example.com" } },
-  { id: "MA-0149", placed: "2026-10-05", status: "packed", payment: "vietqr", slugs: ["meditations", "the-story-of-philosophy"], customer: { name: "Le Hoang Nam", email: "nam.le@example.com" } },
-  { id: "MA-0148", placed: "2026-10-04", status: "placed", payment: "vietqr", slugs: ["pride-and-prejudice"], customer: { name: "Pham Thu Ha", email: "ha.pham@example.com" } },
-  { id: "MA-0144", placed: "2026-10-01", status: "placed", payment: "cod", slugs: ["officially-dead"], customer: { name: "Do Quang Huy", email: "huy.do@example.com" } },
-  { id: "MA-0130", placed: "2026-09-20", status: "delivered", payment: "momo", slugs: ["lost-horizon"], customer: { name: "Hoang Lan", email: "lan.hoang@example.com" } },
+  { id: "MA-0151", placed: "2026-10-06", status: "paid", payment: "momo", slugs: ["jamaica-inn-b001bjerdu"], customer: { name: "Tran Minh Thu", email: "thu.tran@example.com" } },
+  { id: "MA-0149", placed: "2026-10-05", status: "packed", payment: "vietqr", slugs: ["jamaica-inn-b000k4z9km", "a-tree-grows-in-brooklyn-1943-b001kks4ny"], customer: { name: "Le Hoang Nam", email: "nam.le@example.com" } },
+  { id: "MA-0148", placed: "2026-10-04", status: "placed", payment: "vietqr", slugs: ["pride-and-prejudice-b0006aqlwu"], customer: { name: "Pham Thu Ha", email: "ha.pham@example.com" } },
+  { id: "MA-0144", placed: "2026-10-01", status: "placed", payment: "cod", slugs: ["officially-dead-b000jdt7l6"], customer: { name: "Do Quang Huy", email: "huy.do@example.com" } },
+  { id: "MA-0130", placed: "2026-09-20", status: "delivered", payment: "momo", slugs: ["lost-horizon-b0006dlxji"], customer: { name: "Hoang Lan", email: "lan.hoang@example.com" } },
 ];
 
 /** Every order in the shop, newest first. */
-export function getShopOrders(): ShopOrder[] {
-  const others = OTHER_ORDERS.map(({ slugs, ...o }) => ({
-    ...o,
-    books: slugs.flatMap((slug) => {
-      const book = getBook(slug);
-      return book ? [book] : [];
-    }),
-  }));
-  return [...getOrders().map((o) => ({ ...o, customer: READER })), ...others].sort((a, b) => b.placed.localeCompare(a.placed));
+export async function getShopOrders(): Promise<ShopOrder[]> {
+  const [mine, others] = await Promise.all([getOrders(), withBooks(OTHER_ORDERS)]);
+  return [...mine.map((o) => ({ ...o, customer: READER })), ...others].sort((a, b) => b.placed.localeCompare(a.placed));
 }
 
 export const STATUS_LABEL: Record<OrderStatus, string> = {
@@ -44,9 +37,9 @@ export const STATUS_LABEL: Record<OrderStatus, string> = {
 export const ORDER_STATUSES = Object.keys(STATUS_LABEL) as OrderStatus[];
 
 /** Search by order number, customer name or email, title or author; optionally one status. */
-export function queryShopOrders({ q = "", status }: { q?: string; status?: OrderStatus }): ShopOrder[] {
+export async function queryShopOrders({ q = "", status }: { q?: string; status?: OrderStatus }): Promise<ShopOrder[]> {
   const needle = q.trim().toLowerCase();
-  return getShopOrders().filter(
+  return (await getShopOrders()).filter(
     (o) =>
       (!status || o.status === status) &&
       (!needle ||
@@ -96,9 +89,9 @@ export type Task = { ref: string; kind: "order" | "offer"; who: string; what: st
 const copies = (n: number) => `${n} ${n === 1 ? "copy" : "copies"}`;
 
 /** What needs a person at the shop next, oldest first so nothing waits too long. */
-export function getTasks(): Task[] {
+export async function getTasks(): Promise<Task[]> {
   const tasks: Task[] = [];
-  for (const o of getShopOrders()) {
+  for (const o of await getShopOrders()) {
     const base = { ref: o.id, kind: "order" as const, who: o.customer.name, since: o.placed, href: `/admin/orders?q=${o.id}` };
     if (o.status === "paid" || (o.status === "placed" && o.payment === "cod")) tasks.push({ ...base, what: `Pack ${copies(o.books.length)}` });
     if (o.status === "packed") tasks.push({ ...base, what: `Hand ${copies(o.books.length)} to the courier` });
@@ -113,8 +106,8 @@ const DAY_MS = 86_400_000;
 const isoDay = (t: number) => new Date(t).toISOString().slice(0, 10);
 
 /** Order count per status, in the order an order moves. */
-export function statusChart() {
-  const orders = getShopOrders();
+export async function statusChart() {
+  const orders = await getShopOrders();
   return ORDER_STATUSES.map((status) => ({ status, label: STATUS_LABEL[status], count: orders.filter((o) => o.status === status).length }));
 }
 
@@ -122,8 +115,8 @@ export function statusChart() {
  * Revenue per day (cancelled orders excluded) over the 14 days up to the newest order.
  * Ends at the newest order rather than today so the mock data always fills the window.
  */
-export function revenueChart(days = 14) {
-  const orders = getShopOrders().filter((o) => o.status !== "cancelled");
+export async function revenueChart(days = 14) {
+  const orders = (await getShopOrders()).filter((o) => o.status !== "cancelled");
   const end = Date.parse(orders.reduce((max, o) => (o.placed > max ? o.placed : max), "0000-00-00"));
   return Array.from({ length: days }, (_, i) => {
     const date = isoDay(end - (days - 1 - i) * DAY_MS);
@@ -135,14 +128,14 @@ export function revenueChart(days = 14) {
  * How orders were paid (cancelled excluded). Fixed method order, never sorted by size, so each
  * method keeps its place and colour in the stack.
  */
-export function paymentChart() {
-  const orders = getShopOrders().filter((o) => o.status !== "cancelled");
+export async function paymentChart() {
+  const orders = (await getShopOrders()).filter((o) => o.status !== "cancelled");
   return PAYMENT_METHODS.map((m) => ({ payment: m.id, label: m.name, count: orders.filter((o) => o.payment === m.id).length })).filter((r) => r.count > 0);
 }
 
 /** Overview counts: where orders stand and how many offers wait. */
-export function overviewCounts() {
-  const orders = getShopOrders();
+export async function overviewCounts() {
+  const orders = await getShopOrders();
   const count = (fn: (o: ShopOrder) => boolean) => orders.filter(fn).length;
   return {
     orders: [
