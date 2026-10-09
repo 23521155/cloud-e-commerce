@@ -1,8 +1,13 @@
-// Command seed upserts seed/books.jsonl.gz into the catalog database.
-// It is safe to run repeatedly: rows are matched on subjects.slug and
-// books.asin. Run migrations first.
+// Command seed loads seed/books.jsonl.gz into the catalog database. Run
+// migrations first.
+//
+// It does nothing when the database already has books, so deploying again
+// never overwrites prices or details changed since the first load. Pass
+// -force to upsert anyway (rows are matched on subjects.slug and books.asin,
+// and the status of a sold book is kept):
 //
 //	go run ./cmd/seed
+//	go run ./cmd/seed -force
 package main
 
 import (
@@ -32,6 +37,7 @@ const batchSize = 2000 / 18
 func main() {
 
 	file := flag.String("file", "seed/books.jsonl.gz", "cleaned seed file from prepare-seed")
+	force := flag.Bool("force", false, "upsert even when the database already has books")
 	flag.Parse()
 
 	cfg, err := config.Load()
@@ -42,11 +48,6 @@ func main() {
 		log.Fatal("DATABASE_URL is not set")
 	}
 
-	books, err := seeddata.ReadFile(*file)
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	ctx := context.Background()
 
 	db, err := database.Open(ctx, cfg.DatabaseURL)
@@ -54,6 +55,22 @@ func main() {
 		log.Fatal(err)
 	}
 	defer db.Close()
+
+	if !*force {
+		var existing int
+		if err := db.GetContext(ctx, &existing, "SELECT COUNT(*) FROM books"); err != nil {
+			log.Fatal(err)
+		}
+		if existing > 0 {
+			log.Printf("database already has %d books, skipping the seed (use -force to upsert anyway)", existing)
+			return
+		}
+	}
+
+	books, err := seeddata.ReadFile(*file)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// One transaction, so a failed run leaves the database unchanged.
 	tx, err := db.BeginTxx(ctx, nil)
