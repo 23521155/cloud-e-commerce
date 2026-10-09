@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -17,6 +18,7 @@ type fakeService struct {
 	gotSlug    string
 	gotLimit   int
 	listCalled bool
+	gotSlugs   []string
 	err        error
 }
 
@@ -43,6 +45,14 @@ func (f *fakeService) Related(_ context.Context, slug string, limit int) ([]Book
 		return nil, f.err
 	}
 	return []Book{{Slug: "b"}}, nil
+}
+
+func (f *fakeService) BySlugs(_ context.Context, slugs []string) ([]Book, error) {
+	f.gotSlugs = slugs
+	if f.err != nil {
+		return nil, f.err
+	}
+	return []Book{{Slug: "a"}, {Slug: "b"}}, nil
 }
 
 func serve(t *testing.T, svc service, target string) *httptest.ResponseRecorder {
@@ -153,5 +163,43 @@ func TestHandlerRelatedLimit(t *testing.T) {
 
 	if w := serve(t, &fakeService{}, "/api/v1/books/x/related?limit=-2"); w.Code != http.StatusBadRequest {
 		t.Errorf("limit=-2: status = %d, want 400", w.Code)
+	}
+}
+
+func TestListBySlugs(t *testing.T) {
+	svc := &fakeService{}
+
+	w := serve(t, svc, "/api/v1/books?slugs=a,%20b,c&subject=history&page=3")
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body %s", w.Code, w.Body)
+	}
+	if !reflect.DeepEqual(svc.gotSlugs, []string{"a", "b", "c"}) {
+		t.Errorf("slugs = %q, want [a b c]", svc.gotSlugs)
+	}
+	if svc.listCalled {
+		t.Error("the other filters must be ignored when slugs is given")
+	}
+	if !strings.Contains(w.Body.String(), `"total":2`) || !strings.Contains(w.Body.String(), `"items":[`) {
+		t.Errorf("body = %s", w.Body)
+	}
+}
+
+func TestListBySlugsTooMany(t *testing.T) {
+	slugs := strings.TrimSuffix(strings.Repeat("a,", MaxBatch+1), ",")
+	svc := &fakeService{}
+
+	w := serve(t, svc, "/api/v1/books?slugs="+slugs)
+
+	if w.Code != http.StatusBadRequest || svc.gotSlugs != nil {
+		t.Errorf("status = %d, service called = %v", w.Code, svc.gotSlugs != nil)
+	}
+}
+
+func TestListBySlugsError(t *testing.T) {
+	w := serve(t, &fakeService{err: errors.New("mssql: boom")}, "/api/v1/books?slugs=a")
+
+	if w.Code != http.StatusInternalServerError || strings.Contains(w.Body.String(), "mssql") {
+		t.Errorf("status = %d, body = %s", w.Code, w.Body)
 	}
 }

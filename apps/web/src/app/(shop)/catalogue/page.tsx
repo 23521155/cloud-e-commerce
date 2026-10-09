@@ -4,7 +4,7 @@ import Link from "next/link";
 import { MotionController } from "@/components/motion/MotionController";
 import { BookPhoto } from "@/components/ui/BookArt";
 import { DotButton } from "@/components/ui/DotButton";
-import { PAGE_SIZE, SORTS, SUBJECTS, queryBooks, type SortKey, type SubjectSlug } from "@/lib/catalogue";
+import { SORTS, getSubjects, queryBooks, type SortKey } from "@/lib/catalogue";
 
 export const metadata: Metadata = {
   title: "Catalogue — Marginalleya",
@@ -14,6 +14,9 @@ export const metadata: Metadata = {
 const price = new Intl.NumberFormat("en-US", { style: "currency", currency: "VND", maximumFractionDigits: 0 });
 
 const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+
+/** Subjects with fewer books than this are left out of the filter bar (a subject picked by link still shows). */
+const MIN_SUBJECT_BOOKS = 20;
 
 /** Page numbers to show: first, last and the neighbours of the current page, with null marking a gap. */
 function pageWindow(current: number, total: number): (number | null)[] {
@@ -30,16 +33,22 @@ function pageWindow(current: number, total: number): (number | null)[] {
 
 export default async function CataloguePage({ searchParams }: PageProps<"/catalogue">) {
   const sp = await searchParams;
-  const subject = SUBJECTS.find((s) => s.slug === first(sp.subject))?.slug as SubjectSlug | undefined;
+  // An unknown subject is not an error: the API just finds nothing on that shelf.
+  const subjectParam = first(sp.subject) ?? "";
+  const subject = /^[a-z0-9-]{1,100}$/.test(subjectParam) ? subjectParam : undefined;
   const rare = first(sp.rare) === "1";
   const sort = (SORTS.find((s) => s.key === first(sp.sort))?.key ?? "new") as SortKey;
 
   const q = (first(sp.q) ?? "").trim().slice(0, 80);
+  const wantedPage = Math.max(1, Math.floor(Number(first(sp.page))) || 1);
 
-  const matches = queryBooks({ subject, rare, sort, q });
-  const totalPages = Math.max(1, Math.ceil(matches.length / PAGE_SIZE));
-  const page = Math.min(totalPages, Math.max(1, Math.floor(Number(first(sp.page))) || 1));
-  const books = matches.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const [subjects, result] = await Promise.all([getSubjects(), queryBooks({ subject, rare, sort, q, page: wantedPage })]);
+  const total = result.total;
+  const totalPages = Math.max(1, Math.ceil(total / (result.pageSize || 1)));
+  const page = Math.min(totalPages, wantedPage);
+  // A page past the end shows the last one
+  const books = page === wantedPage ? result.books : (await queryBooks({ subject, rare, sort, q, page })).books;
+  const shownSubjects = subjects.filter((s) => s.slug === subject || (s.slug !== "uncategorized" && s.bookCount >= MIN_SUBJECT_BOOKS));
 
   /** Build a catalogue URL from the current filters with some of them overridden. Changing a filter resets to page 1. */
   const href = (next: { subject?: string | null; rare?: boolean; sort?: string; page?: number; q?: string }) => {
@@ -66,7 +75,7 @@ export default async function CataloguePage({ searchParams }: PageProps<"/catalo
         <div className="catalogue__head">
           <div>
             <span className="small-upper text-gold-400" data-reveal="fade">
-              ({String(matches.length).padStart(2, "0")})
+              ({String(total).padStart(2, "0")})
             </span>
             <h1 id="catalogue-title" data-reveal className="big-sans m-0 mt-3 text-[clamp(2.4rem,6vw,7rem)]">
               <span className="line">
@@ -121,7 +130,7 @@ export default async function CataloguePage({ searchParams }: PageProps<"/catalo
                 All subjects
               </Link>
             </li>
-            {SUBJECTS.map((s) => (
+            {shownSubjects.map((s) => (
               <li key={s.slug}>
                 <Link href={href({ subject: s.slug })} scroll={false} className={`catalogue__chip ${subject === s.slug ? "is-active" : ""}`} aria-current={subject === s.slug ? "true" : undefined}>
                   {s.name}

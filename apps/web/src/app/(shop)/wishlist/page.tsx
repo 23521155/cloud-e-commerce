@@ -10,8 +10,8 @@ export const metadata: Metadata = {
 
 const copies = (n: number) => `${n} ${n === 1 ? "copy" : "copies"}`;
 
-export default function WishlistPage() {
-  const items = getWishlist();
+export default async function WishlistPage() {
+  const items = await getWishlist();
   const available = items.filter((i) => !i.sold).length;
 
   return (

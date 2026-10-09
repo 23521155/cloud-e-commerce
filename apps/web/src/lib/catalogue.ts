@@ -1,4 +1,6 @@
-// Placeholder catalogue until the Prisma-backed products exist.
+// Catalogue client for catalog-service, reached through the API gateway.
+// Server-side only: CATALOG_API_URL is read on the server and never sent to the browser.
+
 export type Book = {
   slug: string;
   title: string;
@@ -7,22 +9,18 @@ export type Book = {
   /** VND, integer */
   price: number;
   edition: string;
+  /** Binding, e.g. Hardcover */
   condition: string;
+  /** Cover tint, chosen from the slug: the API stores no colour */
   color: string;
-  subject: SubjectSlug;
+  subject: string;
+  subjectName: string;
   rare: boolean;
-  /** Real cover scan, when we have one (experiment) */
+  /** Real cover scan, when we have one */
   image?: string;
 };
 
-export const SUBJECTS = [
-  { slug: "literature", name: "Literature" },
-  { slug: "history", name: "History" },
-  { slug: "philosophy", name: "Philosophy" },
-  { slug: "children", name: "Children's" },
-] as const;
-
-export type SubjectSlug = (typeof SUBJECTS)[number]["slug"];
+export type Subject = { slug: string; name: string; bookCount: number };
 
 export const SORTS = [
   { key: "new", name: "Newly shelved" },
@@ -33,59 +31,108 @@ export const SORTS = [
 
 export type SortKey = (typeof SORTS)[number]["key"];
 
-// Listed newest first. Sample rows from ref/antique_books.jsonl; USD prices × 25,000 → VND.
-export const BOOKS: Book[] = [
-  { slug: "the-little-prince", title: "The Little Prince", author: "Antoine de Saint-Exupéry", year: "1943", price: 2760000, edition: "Reynal & Hitchcock", condition: "Hardcover", color: "#5c1a16", subject: "children", rare: true, image: "https://m.media-amazon.com/images/I/416YuloAAtL._SY373_BO1,204,203,200_.jpg" },
-  { slug: "murder-at-the-vicarage", title: "Murder at the Vicarage", author: "Agatha Christie", year: "1948", price: 5000000, edition: "First edition", condition: "Paperback", color: "#24382e", subject: "literature", rare: true },
-  { slug: "the-razors-edge", title: "The Razor's Edge", author: "W. Somerset Maugham", year: "1944", price: 290000, edition: "First edition", condition: "Hardcover", color: "#3c1d0e", subject: "literature", rare: false },
-  { slug: "a-tree-grows-in-brooklyn", title: "A Tree Grows in Brooklyn", author: "Betty Smith", year: "1943", price: 800000, edition: "Harper & Brothers", condition: "Hardcover", color: "#3f110e", subject: "literature", rare: false },
-  { slug: "jamaica-inn", title: "Jamaica Inn", author: "Daphne du Maurier", year: "1936", price: 220000, edition: "First edition", condition: "Hardcover", color: "#64331e", subject: "literature", rare: false },
-  { slug: "pavilion-of-women", title: "Pavilion of Women", author: "Pearl S. Buck", year: "1946", price: 200000, edition: "The John Day Company", condition: "Hardcover", color: "#1a2a22", subject: "literature", rare: false },
-  { slug: "marigold-garden", title: "Marigold Garden", author: "Kate Greenaway", year: "1885", price: 3250000, edition: "Routledge", condition: "Hardcover", color: "#7a2620", subject: "children", rare: true },
-  { slug: "officially-dead", title: "Officially Dead", author: "Quentin Reynolds", year: "1945", price: 500000, edition: "Random House, 1st edition", condition: "Hardcover", color: "#2c4436", subject: "history", rare: false },
-  { slug: "pride-and-prejudice", title: "Pride and Prejudice", author: "Jane Austen", year: "1894", price: 4200000, edition: "George Allen", condition: "Hardcover", color: "#24382e", subject: "literature", rare: true },
-  { slug: "the-complete-sherlock-holmes", title: "The Complete Sherlock Holmes", author: "Arthur Conan Doyle", year: "1930", price: 1850000, edition: "Doubleday", condition: "Hardcover", color: "#5c1a16", subject: "literature", rare: false },
-  { slug: "heidi", title: "Heidi", author: "Johanna Spyri", year: "1922", price: 650000, edition: "Grosset & Dunlap", condition: "Hardcover", color: "#3c1d0e", subject: "children", rare: false },
-  { slug: "lost-horizon", title: "Lost Horizon", author: "James Hilton", year: "1933", price: 960000, edition: "First edition", condition: "Hardcover", color: "#93352b", subject: "history", rare: true },
-  { slug: "mythology", title: "Mythology", author: "Edith Hamilton", year: "1942", price: 420000, edition: "Little, Brown", condition: "Hardcover", color: "#1a2a22", subject: "philosophy", rare: false },
-  { slug: "hiroshima", title: "Hiroshima", author: "John Hersey", year: "1946", price: 380000, edition: "Alfred A. Knopf", condition: "Hardcover", color: "#64331e", subject: "history", rare: false },
-  { slug: "meditations", title: "Meditations", author: "Marcus Aurelius", year: "1906", price: 1400000, edition: "J. M. Dent", condition: "Hardcover", color: "#2a140b", subject: "philosophy", rare: true },
-  { slug: "the-story-of-philosophy", title: "The Story of Philosophy", author: "Will Durant", year: "1926", price: 540000, edition: "Simon & Schuster", condition: "Hardcover", color: "#3f110e", subject: "philosophy", rare: false },
-];
+const BASE = (process.env.CATALOG_API_URL ?? "http://localhost:8080/api/catalog").replace(/\/$/, "");
 
-export const PAGE_SIZE = 8;
+/** The slugs the API accepts in one /books?slugs= request. */
+const MAX_BATCH = 50;
 
-export type CatalogueQuery = {
-  subject?: SubjectSlug;
+/** Tints the book photo variants know about (see BookArt). */
+const COVER_COLORS = ["#7a2620", "#5c1a16", "#3f110e", "#93352b", "#2c4436", "#24382e", "#1a2a22", "#3c1d0e", "#64331e", "#8e613c"];
+
+type ApiBook = {
+  slug: string;
+  title: string;
+  author: string | null;
+  year: number;
+  publisher: string | null;
+  edition: string | null;
+  binding: string | null;
+  priceVnd: number;
+  coverUrl: string | null;
   rare: boolean;
-  sort: SortKey;
-  /** Free text matched against title and author, ignoring case and diacritics */
-  q?: string;
+  subjectSlug: string;
+  subjectName: string;
 };
 
-const fold = (s: string) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
+type ApiPage = { items: ApiBook[]; total: number; page: number; pageSize: number };
 
-export function queryBooks({ subject, rare, sort, q }: CatalogueQuery): Book[] {
-  const terms = q ? fold(q).split(/\s+/).filter(Boolean) : [];
-  const books = BOOKS.filter((b) => {
-    if (subject && b.subject !== subject) return false;
-    if (rare && !b.rare) return false;
-    const hay = fold(`${b.title} ${b.author}`);
-    return terms.every((t) => hay.includes(t));
-  });
-  if (sort === "price-asc") return [...books].sort((a, b) => a.price - b.price);
-  if (sort === "price-desc") return [...books].sort((a, b) => b.price - a.price);
-  if (sort === "year") return [...books].sort((a, b) => Number(a.year) - Number(b.year));
-  return books;
+function colorFor(slug: string): string {
+  let hash = 0;
+  for (const ch of slug) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  return COVER_COLORS[hash % COVER_COLORS.length];
 }
 
-export function getBook(slug: string): Book | undefined {
-  return BOOKS.find((b) => b.slug === slug);
+function toBook(b: ApiBook): Book {
+  return {
+    slug: b.slug,
+    title: b.title,
+    author: b.author ?? "Unknown author",
+    year: String(b.year),
+    price: b.priceVnd,
+    edition: b.edition ?? b.publisher ?? "Edition not recorded",
+    condition: b.binding ?? "Binding not recorded",
+    color: colorFor(b.slug),
+    subject: b.subjectSlug,
+    subjectName: b.subjectName,
+    rare: b.rare,
+    image: b.coverUrl ?? undefined,
+  };
+}
+
+/** GET a catalogue API path. A 404 is "not found" (undefined); any other failure throws. */
+async function get<T>(path: string, params?: URLSearchParams): Promise<T | undefined> {
+  const query = params?.toString();
+  const res = await fetch(`${BASE}${path}${query ? `?${query}` : ""}`);
+  if (res.status === 404) return undefined;
+  if (!res.ok) throw new Error(`Catalogue API answered ${res.status} for ${path}`);
+  return (await res.json()) as T;
+}
+
+export type CatalogueQuery = {
+  subject?: string;
+  rare?: boolean;
+  sort?: SortKey;
+  /** Free text matched against title and author, ignoring case and diacritics */
+  q?: string;
+  page?: number;
+};
+
+export type CataloguePage = { books: Book[]; total: number; page: number; pageSize: number };
+
+export async function queryBooks({ subject, rare, sort, q, page }: CatalogueQuery): Promise<CataloguePage> {
+  const params = new URLSearchParams();
+  if (subject) params.set("subject", subject);
+  if (rare) params.set("rare", "true");
+  if (sort) params.set("sort", sort);
+  if (q) params.set("q", q);
+  if (page && page > 1) params.set("page", String(page));
+
+  const data = await get<ApiPage>("/books", params);
+  if (!data) throw new Error("Catalogue API has no /books route");
+  return { books: data.items.map(toBook), total: data.total, page: data.page, pageSize: data.pageSize };
+}
+
+export async function getBook(slug: string): Promise<Book | undefined> {
+  const data = await get<ApiBook>(`/books/${encodeURIComponent(slug)}`);
+  return data && toBook(data);
+}
+
+/** Several books with one request, in the order asked. Unknown slugs are left out. */
+export async function getBooks(slugs: string[]): Promise<Book[]> {
+  const unique = [...new Set(slugs)].slice(0, MAX_BATCH);
+  if (unique.length === 0) return [];
+
+  const data = await get<ApiPage>("/books", new URLSearchParams({ slugs: unique.join(",") }));
+  return (data?.items ?? []).map(toBook);
 }
 
 /** Up to `limit` other books: same subject first, then the rest of the shelf. */
-export function relatedBooks(book: Book, limit = 4): Book[] {
-  const others = BOOKS.filter((b) => b.slug !== book.slug);
-  const same = others.filter((b) => b.subject === book.subject);
-  return [...same, ...others.filter((b) => b.subject !== book.subject)].slice(0, limit);
+export async function relatedBooks(slug: string, limit = 4): Promise<Book[]> {
+  const data = await get<{ items: ApiBook[] }>(`/books/${encodeURIComponent(slug)}/related`, new URLSearchParams({ limit: String(limit) }));
+  return (data?.items ?? []).map(toBook);
+}
+
+export async function getSubjects(): Promise<Subject[]> {
+  const data = await get<{ items: Subject[] }>("/subjects");
+  return data?.items ?? [];
 }

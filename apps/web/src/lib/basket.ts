@@ -1,5 +1,5 @@
 // Placeholder basket until a real one exists (session/DB). Every listing is a single copy.
-import { BOOKS, getBook, type Book } from "@/lib/catalogue";
+import { getBooks, queryBooks, type Book } from "@/lib/catalogue";
 
 export type BasketLine = {
   book: Book;
@@ -8,15 +8,16 @@ export type BasketLine = {
 };
 
 const MOCK: { slug: string; sold?: boolean }[] = [
-  { slug: "pride-and-prejudice" },
-  { slug: "jamaica-inn" },
-  { slug: "lost-horizon", sold: true },
-  { slug: "meditations" },
+  { slug: "pride-and-prejudice-b0006aqlwu" },
+  { slug: "jamaica-inn-b0000ef83i" },
+  { slug: "lost-horizon-b0006dlxji", sold: true },
+  { slug: "heidi-b00087e21s" },
 ];
 
-export function getBasket(): BasketLine[] {
+export async function getBasket(): Promise<BasketLine[]> {
+  const books = new Map((await getBooks(MOCK.map((m) => m.slug))).map((b) => [b.slug, b]));
   return MOCK.flatMap(({ slug, sold = false }) => {
-    const book = getBook(slug);
+    const book = books.get(slug);
     return book ? [{ book, sold }] : [];
   });
 }
@@ -26,8 +27,9 @@ export function subtotal(lines: BasketLine[]): number {
   return lines.reduce((sum, l) => (l.sold ? sum : sum + l.book.price), 0);
 }
 
-/** Stand-in for the recommender: books not already in the basket. */
-export function suggestions(lines: BasketLine[], limit = 4): Book[] {
+/** Stand-in for the recommender: the newest books not already in the basket. */
+export async function suggestions(lines: BasketLine[], limit = 4): Promise<Book[]> {
   const inBasket = new Set(lines.map((l) => l.book.slug));
-  return BOOKS.filter((b) => !inBasket.has(b.slug)).slice(0, limit);
+  const { books } = await queryBooks({ sort: "new" });
+  return books.filter((b) => !inBasket.has(b.slug)).slice(0, limit);
 }

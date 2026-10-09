@@ -17,8 +17,7 @@ export default async function OrdersPage({ searchParams }: PageProps<"/orders">)
   const sort = (ORDER_SORTS.find((s) => s.key === first(sp.sort))?.key ?? "newest") as OrderSort;
   const q = (first(sp.q) ?? "").trim().slice(0, 80);
 
-  const total = getOrders().length;
-  const orders = queryOrders({ q, status, sort });
+  const [total, orders] = await Promise.all([getOrders().then((o) => o.length), queryOrders({ q, status, sort })]);
   const filtered = Boolean(q || status);
 
   /** Orders URL from the current search, filter and sort with some of them overridden. */

@@ -4,16 +4,12 @@ import { notFound } from "next/navigation";
 import { MotionController } from "@/components/motion/MotionController";
 import { BookCover, BookPhoto } from "@/components/ui/BookArt";
 import { DotButton } from "@/components/ui/DotButton";
-import { BOOKS, SUBJECTS, getBook, relatedBooks } from "@/lib/catalogue";
+import { getBook, relatedBooks } from "@/lib/catalogue";
 
 const price = new Intl.NumberFormat("en-US", { style: "currency", currency: "VND", maximumFractionDigits: 0 });
 
-export function generateStaticParams() {
-  return BOOKS.map((b) => ({ slug: b.slug }));
-}
-
 export async function generateMetadata({ params }: PageProps<"/books/[slug]">): Promise<Metadata> {
-  const book = getBook((await params).slug);
+  const book = await getBook((await params).slug);
   if (!book) return { title: "Book not found — Marginalleya" };
   return {
     title: `${book.title} — Marginalleya`,
@@ -22,17 +18,16 @@ export async function generateMetadata({ params }: PageProps<"/books/[slug]">): 
 }
 
 export default async function BookPage({ params }: PageProps<"/books/[slug]">) {
-  const book = getBook((await params).slug);
+  const { slug } = await params;
+  const [book, related] = await Promise.all([getBook(slug), relatedBooks(slug)]);
   if (!book) notFound();
 
-  const subject = SUBJECTS.find((s) => s.slug === book.subject);
-  const related = relatedBooks(book);
   const specs = [
     { term: "Author", value: book.author },
     { term: "Year", value: book.year },
     { term: "Edition", value: book.edition },
     { term: "Binding", value: book.condition },
-    { term: "Subject", value: subject?.name ?? "" },
+    { term: "Subject", value: book.subjectName },
     { term: "Kind", value: book.rare ? "Rare" : "Used" },
   ];
 
@@ -50,7 +45,7 @@ export default async function BookPage({ params }: PageProps<"/books/[slug]">) {
             ❧
           </span>
           <Link href={`/catalogue?subject=${book.subject}`} className="under-hover">
-            {subject?.name}
+            {book.subjectName}
           </Link>
           <span aria-hidden="true" className="text-gold-400">
             ❧

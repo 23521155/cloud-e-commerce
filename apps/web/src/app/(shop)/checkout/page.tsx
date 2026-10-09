@@ -21,9 +21,9 @@ async function placeOrder(formData: FormData) {
   redirect(method.flow === "gateway" ? `/checkout/pay?method=${method.id}` : `/checkout/confirmed?method=${method.id}`);
 }
 
-export default function CheckoutPage() {
+export default async function CheckoutPage() {
   // Sold copies are dropped here: they cannot be bought
-  const lines = getBasket().filter((l) => !l.sold);
+  const lines = (await getBasket()).filter((l) => !l.sold);
   const total = subtotal(lines);
 
   return (
