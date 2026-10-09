@@ -1,0 +1,98 @@
+# catalog-service and its own SQL Server (database per service).
+# Start order: catalog-db -> catalog-db-init -> catalog-migrate -> catalog-seed -> catalog-service.
+# The three jobs are idempotent, so `docker compose up` can be run again at any time.
+
+# One image serves both the API and the seed job; each service names the build
+# so `docker compose up --build` builds it before either starts.
+x-catalog-build: &catalog-build
+  context: .
+  dockerfile: Dockerfile
+
+x-catalog-database-url: &catalog-database-url sqlserver://sa:${CATALOG_DB_PASSWORD:-Catalog_dev_123}@catalog-db:1433?database=catalog&encrypt=true&trustServerCertificate=true
+
+services:
+  catalog-db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${CATALOG_DB_PASSWORD:-Catalog_dev_123}
+    ports:
+      # 1434 on the host so it does not clash with a standalone SQL Server on 1433
+      - "${CATALOG_DB_PORT:-1434}:1433"
+    volumes:
+      - catalog-db-data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", '/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$$MSSQL_SA_PASSWORD" -C -b -Q "SELECT 1"']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  # SQL Server starts empty: create the catalog database once.
+  catalog-db-init:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    restart: "no"
+    depends_on:
+      catalog-db:
+        condition: service_healthy
+    entrypoint: ["/opt/mssql-tools18/bin/sqlcmd"]
+    command:
+      - -S
+      - catalog-db
+      - -U
+      - sa
+      - -P
+      - ${CATALOG_DB_PASSWORD:-Catalog_dev_123}
+      - -C
+      - -b
+      - -Q
+      - IF DB_ID('catalog') IS NULL CREATE DATABASE catalog
+
+  catalog-migrate:
+    image: migrate/migrate:v4.20.1
+    restart: "no"
+    depends_on:
+      catalog-db-init:
+        condition: service_completed_successfully
+    volumes:
+      - ./migrations:/migrations:ro
+    command:
+      - -path=/migrations
+      - -database=sqlserver://sa:${CATALOG_DB_PASSWORD:-Catalog_dev_123}@catalog-db:1433?database=catalog&encrypt=true&trustServerCertificate=true
+      - up
+
+  # Upserts the ~9k books; takes about half a minute the first time.
+  catalog-seed:
+    image: catalog-service:local
+    build: *catalog-build
+    restart: "no"
+    depends_on:
+      catalog-migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: *catalog-database-url
+    entrypoint: ["./seed-job"]
+
+  catalog-service:
+    image: catalog-service:local
+    build: *catalog-build
+    restart: unless-stopped
+    depends_on:
+      catalog-seed:
+        condition: service_completed_successfully
+    environment:
+      PORT: "8083"
+      GIN_MODE: release
+      DATABASE_URL: *catalog-database-url
+    ports:
+      - "${CATALOG_PORT:-8083}:8083"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8083/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+volumes:
+  catalog-db-data:
