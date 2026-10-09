@@ -28,9 +28,9 @@ func main() {
 	defer f.Close()
 
 	var (
-		books             []seeddata.Book
-		read              int
-		noPrice, notABook int
+		books                      []seeddata.Book
+		read                       int
+		noPrice, notABook, badYear int
 	)
 
 	scanner := bufio.NewScanner(f)
@@ -51,6 +51,8 @@ func main() {
 			noPrice++
 		case errors.Is(err, seeddata.ErrNotABook):
 			notABook++
+		case errors.Is(err, seeddata.ErrBadYear):
+			badYear++
 		case err != nil:
 			log.Fatalf("line %d: %v", read, err)
 		default:
@@ -68,6 +70,6 @@ func main() {
 		log.Fatal(err)
 	}
 
-	log.Printf("read %d, kept %d, skipped %d without price and %d non-books → %s",
-		read, len(books), noPrice, notABook, *out)
+	log.Printf("read %d, kept %d, skipped %d without price, %d non-books and %d with a bogus year → %s",
+		read, len(books), noPrice, notABook, badYear, *out)
 }

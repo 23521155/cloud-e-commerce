@@ -137,6 +137,64 @@ func TestCleanDefaultsAndSkips(t *testing.T) {
 	}
 }
 
+func TestCredibleYear(t *testing.T) {
+	tests := []struct {
+		name        string
+		year, count int
+		title       string
+		want        bool
+	}{
+		{"modern placeholder year", 1656, 19, "Toy Story 3", false},
+		{"just below the minimum", 1799, 1, "x", false},
+		{"minimum", 1800, 1, "x", true},
+		{"old and obscure", 1839, 6, "Life of George Washington", true},
+		{"old but popular today", 1829, 914, "Body of Lies: A Novel", false},
+		{"popular and the title names the year", 1885, 3393, "Personal Memoirs of U.S. Grant - 1st Edition 1885", true},
+		{"popular but after 1900", 1944, 5000, "The Little Prince", true},
+	}
+	for _, tt := range tests {
+		if got := credibleYear(tt.year, tt.count, tt.title); got != tt.want {
+			t.Errorf("%s: credibleYear(%d, %d, %q) = %v; want %v", tt.name, tt.year, tt.count, tt.title, got, tt.want)
+		}
+	}
+}
+
+func TestSubjectName(t *testing.T) {
+	tests := []struct {
+		in   []string
+		want string
+	}{
+		{nil, UncategorizedName},
+		{[]string{"Books"}, UncategorizedName},
+		{[]string{"Books", "History", "Military"}, "History"},
+		{[]string{"Books", "Boxed Sets"}, UncategorizedName},
+		{[]string{"Books", "Deals in Books"}, UncategorizedName},
+		{[]string{"Books", "Libros en espa�ol"}, "Libros en español"},
+	}
+	for _, tt := range tests {
+		if got := subjectName(tt.in); got != tt.want {
+			t.Errorf("subjectName(%q) = %q; want %q", tt.in, got, tt.want)
+		}
+	}
+	if got := Slugify(subjectName([]string{"Books", "Libros en espa�ol"})); got != "libros-en-espanol" {
+		t.Errorf("slug = %q", got)
+	}
+}
+
+func TestCleanDropsBogusYearAndNonBooks(t *testing.T) {
+	price := 10.0
+
+	if _, err := Clean(RawBook{ASIN: "B4", Title: "Prom Nights from Hell", Year: 1656, Price: price}); !errors.Is(err, ErrBadYear) {
+		t.Errorf("bogus year: err = %v", err)
+	}
+	if _, err := Clean(RawBook{ASIN: "B5", Title: "Piano Sonata K123 Sheet Music (Piano)", Subtitle: ptr("Paperback – January 1, 1920"), Year: 1920, Price: price}); !errors.Is(err, ErrNotABook) {
+		t.Errorf("sheet music in title: err = %v", err)
+	}
+	if _, err := Clean(RawBook{ASIN: "B6", Title: "Songs", Year: 1920, Price: price, Categories: []string{"Books", "Sheet Music & Scores"}}); !errors.Is(err, ErrNotABook) {
+		t.Errorf("sheet music subject: err = %v", err)
+	}
+}
+
 func deref(s *string) string {
 	if s == nil {
 		return ""

@@ -28,11 +28,22 @@ const (
 	placeholderImageID = "01RmK+J4pJL"
 
 	maxSlugBase = 80
+
+	// MinYear: the dataset's years come from Amazon's placeholder
+	// "January 1, <year>" and are random for many modern books. Nothing
+	// before this year is a plausible real listing.
+	MinYear = 1800
+
+	// popularRatingCount is the number of ratings that only modern
+	// bestsellers reach; a pre-1900 book with this many is almost surely
+	// a modern book with a bogus year.
+	popularRatingCount = 500
 )
 
 var (
 	ErrNoPrice  = errors.New("no usable price")
 	ErrNotABook = errors.New("format is not a book")
+	ErrBadYear  = errors.New("year is not credible")
 )
 
 // nonBookFormats are listing formats sold alongside books on Amazon that
@@ -47,6 +58,23 @@ var nonBookFormats = map[string]bool{
 	"MP3 CD":                true,
 	"Audio CD":              true,
 	"Cards":                 true,
+}
+
+// nonBookSubjects are Amazon departments that hold no books.
+var nonBookSubjects = map[string]bool{
+	"Sheet Music & Scores":             true,
+	"Stationery, Journals & Notebooks": true,
+}
+
+// junkSubjects are Amazon merchandising or format labels, not genres. Their
+// books are kept but filed under Uncategorized.
+var junkSubjects = map[string]bool{
+	"ASINs for HQP":                true,
+	"Books Markdowns":              true,
+	"Boxed Sets":                   true,
+	"Deals in Books":               true,
+	"Large Print":                  true,
+	"New, Used & Rental Textbooks": true,
 }
 
 // publisherDate matches the trailing "(January 1, 1945)" on publisher strings.
@@ -97,7 +125,10 @@ type Book struct {
 // ErrNotABook when the row should be left out of the catalogue.
 func Clean(r RawBook) (Book, error) {
 
-	if nonBookFormats[format(r.Subtitle)] {
+	subject := subjectName(r.Categories)
+
+	if nonBookFormats[format(r.Subtitle)] || nonBookSubjects[subject] ||
+		strings.Contains(strings.ToLower(r.Title), "sheet music") {
 		return Book{}, ErrNotABook
 	}
 
@@ -107,12 +138,12 @@ func Clean(r RawBook) (Book, error) {
 	}
 
 	title := cleanTitle(r.Title)
-	publisher, edition := splitPublisher(r.Publisher)
 
-	subject := UncategorizedName
-	if len(r.Categories) > 1 {
-		subject = r.Categories[1]
+	if !credibleYear(r.Year, r.RatingCount, title) {
+		return Book{}, ErrBadYear
 	}
+
+	publisher, edition := splitPublisher(r.Publisher)
 
 	return Book{
 		ASIN:        r.ASIN,
@@ -134,6 +165,35 @@ func Clean(r RawBook) (Book, error) {
 		SubjectName: subject,
 		Rare:        r.Year < RareBeforeYear,
 	}, nil
+}
+
+// subjectName is the second-level Amazon category, cleaned up. Books
+// without one, or with a merchandising label, are Uncategorized.
+func subjectName(categories []string) string {
+	if len(categories) < 2 {
+		return UncategorizedName
+	}
+
+	// The scraped "Libros en español" lost its ñ and arrived as U+FFFD.
+	name := strings.ReplaceAll(categories[1], "�", "ñ")
+
+	if junkSubjects[name] {
+		return UncategorizedName
+	}
+	return name
+}
+
+// credibleYear rejects the random placeholder years of the dataset. Before
+// 1800 is always wrong; before 1900 it is also wrong for books that are
+// popular today, unless the title itself names the year ("... 1st Edition 1885").
+func credibleYear(year, ratingCount int, title string) bool {
+	if year < MinYear {
+		return false
+	}
+	if year < RareBeforeYear && ratingCount >= popularRatingCount {
+		return strings.Contains(title, strconv.Itoa(year))
+	}
+	return true
 }
 
 // Fold lowercases s and strips diacritics, so "Pháp" matches "phap".
