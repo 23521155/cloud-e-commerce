@@ -1,6 +1,6 @@
 name: cloud-e-commerce
 
 include:
-  - ./infrastructure/compose.yaml
+  - ./infra/compose.yaml
   - ./apps/api-gateway/compose.yaml
-  - ./apps/user-service/compose.yaml
+  - ./apps/catalog-service/compose.yaml
