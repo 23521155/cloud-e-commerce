@@ -11,6 +11,7 @@ services:
     environment:
       AUTH_SERVICE: http://auth-service:8081
       USER_SERVICE: http://user-service:8082
+      CATALOG_SERVICE: http://catalog-service:8083
       PROJECT_SERVICE: http://project-service:8086
       OTEL_ENDPOINT: jaeger:4317
     volumes:

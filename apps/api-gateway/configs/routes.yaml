@@ -26,3 +26,26 @@ routes:
     upload:
       timeout: 30s
       max_body_bytes: 11534336
+
+  # Public catalogue. The gateway strips /api/catalog, so catalog-service
+  # serves /books, /books/:slug, /books/:slug/related and /subjects at its root.
+  - name: catalog
+    prefix: /api/catalog
+    upstream: ${CATALOG_SERVICE}
+
+    timeout: 5s
+
+    retry:
+      attempts: 3
+      base_delay: 1s
+      max_delay: 3s
+
+    breaker:
+      enabled: true
+
+    rate_limit:
+      requests: 120
+      window: 1m
+      burst: 30
+
+    auth_mode: optional

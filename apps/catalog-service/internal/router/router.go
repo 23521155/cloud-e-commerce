@@ -30,7 +30,8 @@ func SetupRouter(db pinger, routes ...Registrar) *gin.Engine {
 
 	registerHealthRoutes(r, db)
 
-	api := r.Group("/api/v1")
+	// Served at the root: the gateway strips its /api/catalog prefix.
+	api := r.Group("")
 	for _, route := range routes {
 		route.Register(api)
 	}
@@ -38,7 +39,7 @@ func SetupRouter(db pinger, routes ...Registrar) *gin.Engine {
 	return r
 }
 
-// Registrar is implemented by every handler that mounts routes under /api/v1.
+// Registrar is implemented by every handler that mounts routes on the API group.
 type Registrar interface {
 	Register(api *gin.RouterGroup)
 }

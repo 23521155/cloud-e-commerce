@@ -26,7 +26,7 @@ func NewHandler(service service) *Handler {
 	return &Handler{service: service}
 }
 
-// Register mounts the book routes on the /api/v1 group.
+// Register mounts the book routes on the API group.
 func (h *Handler) Register(api *gin.RouterGroup) {
 	api.GET("/books", h.list)
 	api.GET("/books/:slug", h.get)
