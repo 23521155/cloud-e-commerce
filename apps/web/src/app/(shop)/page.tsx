@@ -5,29 +5,20 @@ import { MotionController } from "@/components/motion/MotionController";
 import { Preloader } from "@/components/motion/Preloader";
 import { BookCover, BookPhoto, OpenBook, SpineStack } from "@/components/ui/BookArt";
 import { DotButton } from "@/components/ui/DotButton";
+import { getSubjects, queryBooks } from "@/lib/catalogue";
 
-// Placeholder catalogue until the Prisma-backed products exist.
-type Book = {
-  slug: string;
-  title: string;
-  author: string;
-  year: string;
-  /** VND, integer */
-  price: number;
-  edition: string;
-  condition: string;
-  color: string;
-};
-
-// Sample rows from ref/antique_books.jsonl (Amazon Books metadata); USD prices × 25,000 → VND.
-const NEW_BOOKS: Book[] = [
-  { slug: "the-little-prince", title: "The Little Prince", author: "Antoine de Saint-Exupéry", year: "1943", price: 2760000, edition: "Reynal & Hitchcock", condition: "Hardcover", color: "#5c1a16" },
-  { slug: "murder-at-the-vicarage", title: "Murder at the Vicarage", author: "Agatha Christie", year: "1948", price: 5000000, edition: "First edition", condition: "Paperback", color: "#24382e" },
-  { slug: "the-razors-edge", title: "The Razor's Edge", author: "W. Somerset Maugham", year: "1944", price: 290000, edition: "First edition", condition: "Hardcover", color: "#3c1d0e" },
-  { slug: "a-tree-grows-in-brooklyn", title: "A Tree Grows in Brooklyn", author: "Betty Smith", year: "1943", price: 800000, edition: "Harper & Brothers", condition: "Hardcover", color: "#3f110e" },
-  { slug: "jamaica-inn", title: "Jamaica Inn", author: "Daphne du Maurier", year: "1936", price: 220000, edition: "First edition", condition: "Hardcover", color: "#64331e" },
-  { slug: "pavilion-of-women", title: "Pavilion of Women", author: "Pearl S. Buck", year: "1946", price: 200000, edition: "The John Day Company", condition: "Hardcover", color: "#1a2a22" },
+/** Covers drawn in the hero art. Decoration only (no links), so they do not come from the catalogue. */
+const HERO_COVERS = [
+  { title: "The Little Prince", author: "Antoine de Saint-Exupéry", color: "#5c1a16" },
+  { title: "Murder at the Vicarage", author: "Agatha Christie", color: "#24382e" },
+  { title: "The Razor's Edge", author: "W. Somerset Maugham", color: "#3c1d0e" },
+  { title: "A Tree Grows in Brooklyn", author: "Betty Smith", color: "#3f110e" },
+  { title: "Jamaica Inn", author: "Daphne du Maurier", color: "#64331e" },
+  { title: "Pavilion of Women", author: "Pearl S. Buck", color: "#1a2a22" },
 ];
+
+/** How many of the newest books the "Newly shelved" grid shows. */
+const NEW_BOOKS_SHOWN = 6;
 
 const RARE = [
   { title: "Pride and Prejudice", author: "Jane Austen", color: "#24382e" },
@@ -45,14 +36,16 @@ const RARE_KINDS = [
   { name: "Engravings", note: "Plate books, maps, hand-coloured" },
 ];
 
+/** The giant words; slugs are catalogue subjects. */
 const SUBJECT_ROWS = [
-  { word: "Literature", slug: "literature", before: true, after: true },
+  { word: "Literature", slug: "literature-fiction", before: true, after: true },
   { word: "History", slug: "history", before: false, after: true },
-  { word: "Philosophy", slug: "philosophy", before: true, after: false },
-  { word: "Children's", slug: "children", before: true, after: true },
+  { word: "Biography", slug: "biographies-memoirs", before: true, after: false },
+  { word: "Children's", slug: "childrens-books", before: true, after: true },
 ];
 
-const BUBBLES = ["Tang poetry", "French novels", "Chronicles", "Buddhism", "Old maps", "Folk tales", "Vintage magazines", "Old schoolbooks"];
+/** How many other subjects (the largest ones) appear as bubbles under the first word. */
+const BUBBLES_SHOWN = 8;
 
 /** Scattered hero art: position, size, rotation, parallax strength (negative speed = floats up faster than the scroll); `desk` items are hidden on phones. */
 const HERO_ART = [
@@ -92,7 +85,15 @@ function SubjectArt({ index }: { index: number }) {
   );
 }
 
-export default function Home() {
+export default async function Home() {
+  const [{ books }, subjects] = await Promise.all([queryBooks({ sort: "new" }), getSubjects()]);
+  const newBooks = books.slice(0, NEW_BOOKS_SHOWN);
+  const bigWords = new Set(SUBJECT_ROWS.map((row) => row.slug));
+  const bubbles = subjects
+    .filter((s) => s.slug !== "uncategorized" && !bigWords.has(s.slug))
+    .sort((a, b) => b.bookCount - a.bookCount)
+    .slice(0, BUBBLES_SHOWN);
+
   return (
     <>
       <Preloader />
@@ -114,9 +115,9 @@ export default function Home() {
                   <BookCover
                     plain={i === 0}
                     eager
-                    title={NEW_BOOKS[item.book].title}
-                    author={NEW_BOOKS[item.book].author}
-                    color={NEW_BOOKS[item.book].color}
+                    title={HERO_COVERS[item.book].title}
+                    author={HERO_COVERS[item.book].author}
+                    color={HERO_COVERS[item.book].color}
                   />
                 )}
                 {item.kind === "stack" && <SpineStack className="w-full" />}
@@ -181,7 +182,7 @@ export default function Home() {
         <div className="work__intro">
           <div>
             <span className="small-upper text-gold-400" data-reveal="fade">
-              ({String(NEW_BOOKS.length).padStart(2, "0")})
+              ({String(newBooks.length).padStart(2, "0")})
             </span>
             <h2 id="new-title" data-reveal className="big-sans m-0 mt-3 text-[clamp(2rem,4.2vw,4.6rem)]">
               <span className="line">
@@ -198,7 +199,7 @@ export default function Home() {
         </div>
 
         <ul className="work__grid m-0 list-none p-0">
-          {NEW_BOOKS.map((book, i) => (
+          {newBooks.map((book, i) => (
             <li key={book.slug}>
               <div data-speed={[0.12, 0.06, 0][i % 3]}>
                 <Link href={`/books/${book.slug}`} className="work-card" data-reveal="fade">
@@ -349,14 +350,14 @@ export default function Home() {
               </div>
               {r === 0 && (
                 <div data-reveal className="my-[clamp(12px,2vw,30px)] flex max-w-3xl flex-wrap justify-center gap-3">
-                  {BUBBLES.map((bubble, i) => (
+                  {bubbles.map((subject, i) => (
                     <Link
-                      key={bubble}
-                      href={`/catalogue?q=${encodeURIComponent(bubble)}`}
+                      key={subject.slug}
+                      href={`/catalogue?subject=${subject.slug}`}
                       className="bubble"
                       style={{ "--i": i, "--r": `${((i * 37) % 11) - 5}deg` } as CSSProperties}
                     >
-                      {bubble}
+                      {subject.name}
                     </Link>
                   ))}
                 </div>
