@@ -9,9 +9,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/fizzisme/catalog-service/internal/book"
 	"github.com/fizzisme/catalog-service/internal/config"
+	"github.com/fizzisme/catalog-service/internal/database"
 	"github.com/fizzisme/catalog-service/internal/logger"
 	"github.com/fizzisme/catalog-service/internal/router"
+	"github.com/fizzisme/catalog-service/internal/subject"
 	"go.uber.org/zap"
 )
 
@@ -36,13 +39,26 @@ func main() {
 		)
 	}
 
+	ctx := context.Background()
+	db, err := database.Open(ctx, cfg.DatabaseURL)
+	if err != nil {
+		logger.Log.Fatal(
+			"cannot open database",
+			zap.Error(err),
+		)
+	}
+	defer db.Close()
+
 	logger.Log.Info(
 		"Application starting",
 		zap.String("app", cfg.AppName),
 		zap.String("port", cfg.Port),
 	)
 
-	r := router.SetupRouter()
+	bookHandler := book.NewHandler(book.NewService(book.NewRepository(db)))
+	subjectHandler := subject.NewHandler(subject.NewRepository(db))
+
+	r := router.SetupRouter(db, bookHandler, subjectHandler)
 
 	srv := &http.Server{
 		Addr:    ":" + cfg.Port,

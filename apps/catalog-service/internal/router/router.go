@@ -10,7 +10,7 @@ import (
 
 // SetupRouter builds the Gin engine for the catalog service: global
 // middleware and the health check route.
-func SetupRouter() *gin.Engine {
+func SetupRouter(db pinger, routes ...Registrar) *gin.Engine {
 
 	r := gin.New()
 
@@ -28,9 +28,19 @@ func SetupRouter() *gin.Engine {
 		requestLogger(),
 	)
 
-	registerHealthRoutes(r)
+	registerHealthRoutes(r, db)
+
+	api := r.Group("/api/v1")
+	for _, route := range routes {
+		route.Register(api)
+	}
 
 	return r
+}
+
+// Registrar is implemented by every handler that mounts routes under /api/v1.
+type Registrar interface {
+	Register(api *gin.RouterGroup)
 }
 
 // requestLogger logs one structured entry per request. The request ID
