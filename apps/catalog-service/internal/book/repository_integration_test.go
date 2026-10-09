@@ -172,3 +172,24 @@ func TestGetBySlugAndRelated(t *testing.T) {
 		}
 	}
 }
+
+func TestBySlugs(t *testing.T) {
+	repo := newTestRepo(t)
+
+	books, err := repo.BySlugs(context.Background(), []string{
+		"the-complete-sherlock-holmes-b00005vo0t",
+		"khong-co",
+		"the-complete-sherlock-holmes-b000k04qd2",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(books) != 2 {
+		t.Fatalf("got %d books, want 2 (the unknown slug is left out)", len(books))
+	}
+
+	none, err := repo.BySlugs(context.Background(), nil)
+	if err != nil || len(none) != 0 {
+		t.Errorf("empty input: %v, %v", none, err)
+	}
+}

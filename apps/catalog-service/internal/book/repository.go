@@ -135,3 +135,30 @@ ORDER BY CASE WHEN b.subject_id = (SELECT subject_id FROM books WHERE slug = @sl
 
 	return books, nil
 }
+
+// BySlugs returns the books with the given slugs whatever their status, so a
+// basket can still show a book that has since been sold. The order is not
+// defined and unknown slugs are left out.
+func (r *Repository) BySlugs(ctx context.Context, slugs []string) ([]Book, error) {
+
+	if len(slugs) == 0 {
+		return []Book{}, nil
+	}
+
+	placeholders := make([]string, len(slugs))
+	args := make([]any, len(slugs))
+	for i, slug := range slugs {
+		name := fmt.Sprintf("s%d", i)
+		placeholders[i] = "@" + name
+		args[i] = sql.Named(name, slug)
+	}
+
+	query := selectBook + " WHERE b.slug IN (" + strings.Join(placeholders, ", ") + ")"
+
+	books := []Book{}
+	if err := r.db.SelectContext(ctx, &books, query, args...); err != nil {
+		return nil, err
+	}
+
+	return books, nil
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/fizzisme/catalog-service/internal/logger"
 	"github.com/gin-gonic/gin"
@@ -16,6 +17,7 @@ type service interface {
 	List(ctx context.Context, in ListInput) (Page, error)
 	Get(ctx context.Context, slug string) (Book, error)
 	Related(ctx context.Context, slug string, limit int) ([]Book, error)
+	BySlugs(ctx context.Context, slugs []string) ([]Book, error)
 }
 
 type Handler struct {
@@ -41,6 +43,10 @@ type listQuery struct {
 	Sort    string `form:"sort" binding:"omitempty,oneof=new price-asc price-desc year"`
 	Q       string `form:"q"    binding:"max=100"`
 	Page    int    `form:"page" binding:"omitempty,min=1,max=100000"`
+
+	// Slugs is a comma-separated list. When present the other filters are
+	// ignored and the listing is replaced by those books (see bySlugs).
+	Slugs string `form:"slugs" binding:"max=4000"`
 }
 
 type relatedQuery struct {
@@ -52,6 +58,11 @@ func (h *Handler) list(c *gin.Context) {
 	var q listQuery
 	if err := c.ShouldBindQuery(&q); err != nil {
 		badRequest(c)
+		return
+	}
+
+	if q.Slugs != "" {
+		h.bySlugs(c, q.Slugs)
 		return
 	}
 
@@ -68,6 +79,33 @@ func (h *Handler) list(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, page)
+}
+
+// bySlugs answers GET /books?slugs=a,b,c, used to show the books of a basket,
+// order or wishlist with a single request. The books come in the order asked.
+func (h *Handler) bySlugs(c *gin.Context, raw string) {
+
+	slugs := strings.Split(raw, ",")
+	if len(slugs) > MaxBatch {
+		badRequest(c)
+		return
+	}
+	for i := range slugs {
+		slugs[i] = strings.TrimSpace(slugs[i])
+	}
+
+	books, err := h.service.BySlugs(c.Request.Context(), slugs)
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, Page{
+		Items:    books,
+		Total:    len(books),
+		Page:     1,
+		PageSize: len(books),
+	})
 }
 
 func (h *Handler) get(c *gin.Context) {

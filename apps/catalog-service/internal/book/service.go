@@ -11,6 +11,9 @@ const (
 	DefaultSort         = "new"
 	DefaultRelatedLimit = 4
 	MaxRelatedLimit     = 12
+
+	// MaxBatch is the most slugs one BySlugs call accepts.
+	MaxBatch = 50
 )
 
 // store is what the service needs from the repository; tests replace it
@@ -19,6 +22,7 @@ type store interface {
 	List(ctx context.Context, f Filter) ([]Book, int, error)
 	GetBySlug(ctx context.Context, slug string) (Book, error)
 	Related(ctx context.Context, slug string, limit int) ([]Book, error)
+	BySlugs(ctx context.Context, slugs []string) ([]Book, error)
 }
 
 // ListInput is the raw listing request, as read from the query string.
@@ -96,4 +100,37 @@ func (s *Service) Related(ctx context.Context, slug string, limit int) ([]Book, 
 	}
 
 	return s.store.Related(ctx, slug, limit)
+}
+
+// BySlugs returns the books for slugs in the order requested. Duplicates are
+// collapsed and unknown slugs are left out.
+func (s *Service) BySlugs(ctx context.Context, slugs []string) ([]Book, error) {
+
+	seen := make(map[string]bool, len(slugs))
+	unique := make([]string, 0, len(slugs))
+	for _, slug := range slugs {
+		if slug != "" && !seen[slug] {
+			seen[slug] = true
+			unique = append(unique, slug)
+		}
+	}
+
+	found, err := s.store.BySlugs(ctx, unique)
+	if err != nil {
+		return nil, err
+	}
+
+	bySlug := make(map[string]Book, len(found))
+	for _, b := range found {
+		bySlug[b.Slug] = b
+	}
+
+	ordered := make([]Book, 0, len(found))
+	for _, slug := range unique {
+		if b, ok := bySlug[slug]; ok {
+			ordered = append(ordered, b)
+		}
+	}
+
+	return ordered, nil
 }

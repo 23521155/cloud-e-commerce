@@ -13,6 +13,8 @@ type fakeStore struct {
 	listErr    error
 	exists     bool
 	relatedHit bool
+	gotSlugs   []string
+	stored     []Book
 }
 
 func (f *fakeStore) List(_ context.Context, filter Filter) ([]Book, int, error) {
@@ -31,6 +33,11 @@ func (f *fakeStore) Related(_ context.Context, _ string, limit int) ([]Book, err
 	f.relatedHit = true
 	f.gotLimit = limit
 	return nil, nil
+}
+
+func (f *fakeStore) BySlugs(_ context.Context, slugs []string) ([]Book, error) {
+	f.gotSlugs = slugs
+	return f.stored, nil
 }
 
 func TestListNormalisesInput(t *testing.T) {
@@ -132,5 +139,31 @@ func TestRelatedUnknownSlug(t *testing.T) {
 	}
 	if store.relatedHit {
 		t.Error("Related query ran for a slug that does not exist")
+	}
+}
+
+func TestBySlugsKeepsRequestedOrderAndDropsUnknown(t *testing.T) {
+	// The store returns rows in any order and omits unknown slugs.
+	store := &fakeStore{stored: []Book{{Slug: "c"}, {Slug: "a"}}}
+
+	books, err := NewService(store).BySlugs(context.Background(), []string{"a", "b", "c"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(books) != 2 || books[0].Slug != "a" || books[1].Slug != "c" {
+		t.Errorf("books = %+v, want a then c", books)
+	}
+}
+
+func TestBySlugsDeduplicates(t *testing.T) {
+	store := &fakeStore{}
+
+	if _, err := NewService(store).BySlugs(context.Background(), []string{"a", "", "b", "a"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if !reflect.DeepEqual(store.gotSlugs, []string{"a", "b"}) {
+		t.Errorf("store got %v, want [a b]", store.gotSlugs)
 	}
 }
