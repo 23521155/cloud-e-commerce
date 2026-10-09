@@ -23,7 +23,7 @@ func NewHandler(subjects lister) *Handler {
 	return &Handler{subjects: subjects}
 }
 
-// Register mounts the subject routes on the /api/v1 group.
+// Register mounts the subject routes on the API group.
 func (h *Handler) Register(api *gin.RouterGroup) {
 	api.GET("/subjects", h.list)
 }
