@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Form from "next/form";
 import Link from "next/link";
+import { ScrollToShelf } from "@/components/catalogue/ScrollToShelf";
 import { MotionController } from "@/components/motion/MotionController";
 import { BookPhoto } from "@/components/ui/BookArt";
 import { DotButton } from "@/components/ui/DotButton";
@@ -70,6 +71,8 @@ export default async function CataloguePage({ searchParams }: PageProps<"/catalo
     <>
       {/* New filters render new cards; remount so the reveal observer picks them up (it only scans on mount). */}
       <MotionController key={`${subject}-${rare}-${sort}-${page}-${q}`} />
+      {/* After MotionController, so its scroll listener is already attached when this fires */}
+      <ScrollToShelf filters={`${subject}-${rare}-${sort}-${q}`} page={page} />
 
       <section className="work catalogue" aria-labelledby="catalogue-title">
         <div className="catalogue__head">
@@ -90,38 +93,6 @@ export default async function CataloguePage({ searchParams }: PageProps<"/catalo
             Used, new and rare, each one described by the person who keeps it. Faults first, virtues after.
           </p>
         </div>
-
-        {/* Search and filters keep the scroll position: the reader stays by the shelf instead of jumping to the top */}
-        <Form className="catalogue__search" action="/catalogue" scroll={false} role="search" aria-label="Search the catalogue">
-          {subject && <input type="hidden" name="subject" value={subject} />}
-          {rare && <input type="hidden" name="rare" value="1" />}
-          {sort !== "new" && <input type="hidden" name="sort" value={sort} />}
-          <label htmlFor="catalogue-q" className="catalogue__card-head small-upper">
-            <span>Card search</span>
-            <span>Title or author</span>
-          </label>
-          <div className="catalogue__card-body">
-            <input
-              id="catalogue-q"
-              key={q}
-              type="search"
-              name="q"
-              defaultValue={q}
-              maxLength={80}
-              placeholder="Jane Austen…"
-              autoComplete="off"
-              className="catalogue__input"
-            />
-            {q && (
-              <Link href={href({ q: "" })} scroll={false} className="catalogue__clear small-upper under-hover">
-                Clear
-              </Link>
-            )}
-            <button type="submit" className="catalogue__stamp">
-              Find
-            </button>
-          </div>
-        </Form>
 
         <nav className="catalogue__filters" aria-label="Filter the catalogue">
           <ul className="catalogue__row" aria-label="Subject">
@@ -164,9 +135,41 @@ export default async function CataloguePage({ searchParams }: PageProps<"/catalo
           </ul>
         </nav>
 
+        {/* Search and filters keep the scroll position: the reader stays by the shelf instead of jumping to the top */}
+        <Form className="catalogue__search" action="/catalogue" scroll={false} role="search" aria-label="Search the catalogue">
+          {subject && <input type="hidden" name="subject" value={subject} />}
+          {rare && <input type="hidden" name="rare" value="1" />}
+          {sort !== "new" && <input type="hidden" name="sort" value={sort} />}
+          <label htmlFor="catalogue-q" className="catalogue__card-head small-upper">
+            <span>Card search</span>
+            <span>Title or author</span>
+          </label>
+          <div className="catalogue__card-body">
+            <input
+              id="catalogue-q"
+              key={q}
+              type="search"
+              name="q"
+              defaultValue={q}
+              maxLength={80}
+              placeholder="Jane Austen…"
+              autoComplete="off"
+              className="catalogue__input"
+            />
+            {q && (
+              <Link href={href({ q: "" })} scroll={false} className="catalogue__clear small-upper under-hover">
+                Clear
+              </Link>
+            )}
+            <button type="submit" className="catalogue__stamp">
+              Find
+            </button>
+          </div>
+        </Form>
+
         {books.length > 0 ? (
           <>
-          <ul className="catalogue__grid m-0 list-none p-0">
+          <ul id="shelf" className="catalogue__grid m-0 list-none scroll-mt-10 p-0">
             {books.map((book) => (
               <li key={book.slug}>
                 <Link href={`/books/${book.slug}`} className="work-card" data-reveal="fade">
@@ -193,7 +196,7 @@ export default async function CataloguePage({ searchParams }: PageProps<"/catalo
           {totalPages > 1 && (
             <nav className="catalogue__pager" aria-label="Pagination">
               {page > 1 ? (
-                <Link href={href({ page: page - 1 })} className="catalogue__step small-upper under-hover" rel="prev">
+                <Link href={href({ page: page - 1 })} scroll={false} className="catalogue__step small-upper under-hover" rel="prev">
                   <span aria-hidden="true" className="catalogue__step-mark catalogue__step-mark--prev">❧</span>
                   Previous
                 </Link>
@@ -214,6 +217,7 @@ export default async function CataloguePage({ searchParams }: PageProps<"/catalo
                     <li key={n}>
                       <Link
                         href={href({ page: n })}
+                        scroll={false}
                         className={`catalogue__chip catalogue__chip--num ${n === page ? "is-active" : ""}`}
                         aria-label={`Page ${n}`}
                         aria-current={n === page ? "page" : undefined}
@@ -226,7 +230,7 @@ export default async function CataloguePage({ searchParams }: PageProps<"/catalo
               </ol>
 
               {page < totalPages ? (
-                <Link href={href({ page: page + 1 })} className="catalogue__step small-upper under-hover" rel="next">
+                <Link href={href({ page: page + 1 })} scroll={false} className="catalogue__step small-upper under-hover" rel="next">
                   Next
                   <span aria-hidden="true" className="catalogue__step-mark">❧</span>
                 </Link>
