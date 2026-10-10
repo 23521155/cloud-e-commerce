@@ -6,7 +6,7 @@ Context for AI assistants working in this repository. Read this before making ch
 
 University course project (đồ án): an e-commerce (book store) platform built as microservices behind an API gateway, with a recommendation service, deployed fully on Azure with monitoring. Grading favors a clean architecture, real cloud deployment, IaC, CI/CD and observability — keep those in mind when proposing solutions.
 
-**Current status:** runs locally only (Docker Compose). `web`, `api-gateway` and `catalog-service` are implemented; `user-service` and `order-service` are Nest.js scaffolds; `recommender`, `infra/modules`, `infra/parameters` and `.github/workflows` are still empty (`.gitkeep`). Nothing is deployed to Azure yet. The owner writes the code incrementally — do NOT scaffold whole features unless explicitly asked; implement only the requested piece.
+**Current status:** runs locally only (Docker Compose). `web`, `api-gateway` and `catalog-service` are implemented; `user-service` is a Nest.js scaffold; `order-service` is a Go scaffold (health check only); `recommender`, `infra/modules`, `infra/parameters` and `.github/workflows` are still empty (`.gitkeep`). Nothing is deployed to Azure yet. The owner writes the code incrementally — do NOT scaffold whole features unless explicitly asked; implement only the requested piece.
 
 ## Architecture decisions (agreed — don't change without asking)
 
@@ -16,13 +16,15 @@ University course project (đồ án): an e-commerce (book store) platform built
 | Web | Next.js (UI); reads data from backend services through the API gateway | Frontend only talks to the gateway |
 | API gateway | Go (`apps/api-gateway`), routes in `configs/routes.yaml`, port 8080 | Single public entry point for the backend |
 | Catalog service | Go + Gin (`apps/catalog-service`), port 8083, migrations via `golang-migrate`, seed job `cmd/seed` | Books / subjects catalogue |
-| User / Order services | Nest.js 12 (`apps/user-service`, `apps/order-service`), vitest, oxlint | Scaffolded, not implemented yet |
+| User service | Nest.js 12 (`apps/user-service`), vitest, oxlint | Scaffolded, not implemented yet |
+| Order service | Go + Gin (`apps/order-service`), port 8084, same layout as catalog-service, own DB `orders` | Orders and the server-side cart |
+| Checkout & cart | Guest checkout allowed (`orders.user_id` nullable; guests look up orders by order code + email). Guest cart in localStorage; signed-in cart stored in order-service (`internal/cart`, tables `carts`/`cart_items`, no joins with `orders`), merged on login. Order creation takes `items[]` + an idempotency key and re-reads prices/stock from catalog-service. Payment gateway integration planned later | Cart can be split into its own service later by changing only the gateway upstream |
 | Recommender | FastAPI (Python) separate service | ML ecosystem; not implemented yet |
 | Functions | Azure Functions v4, Node.js/TypeScript, in `apps/functions` | Event-driven workloads; independently deployable |
 | Database | SQL Server, **database per service** (e.g. `catalog`). On Azure: Azure SQL Database serverless, one logical server, one DB per service | Required: SQL Server on Azure; serverless is cheap |
 | ORM (web) | Prisma 7 + `@prisma/adapter-mssql` | SQL Server support, migrations |
 | DB access (recommender) | SQLAlchemy + pyodbc (ODBC Driver 18) | — |
-| Cache | Redis (local: `redis:8-alpine`) | Azure service not decided yet |
+| Cache | Redis (local: `redis:8-alpine`) | Not used by any service yet; Azure service not decided |
 | Messaging | RabbitMQ (local only) | **Azure option not decided yet** — decide later (Azure has no managed RabbitMQ; candidates: Service Bus, or self-hosted container) |
 | Hosting | Azure App Service Web Apps: `web` as code (Node.js runtime stack); backend services as containers | Required by the assignment: Web Apps |
 | Registry | Azure Container Registry for all container images, pulled via managed identity | No admin credentials |
@@ -32,7 +34,7 @@ University course project (đồ án): an e-commerce (book store) platform built
 | IaC | Bicep, one module per concern in `infra/modules/` | Native Azure |
 | CI/CD | GitHub Actions, Azure login via OIDC | No stored Azure secrets |
 
-Service contracts: web calls the catalogue via `CATALOG_API_URL` (gateway, default `http://localhost:8080/api/catalog`); the gateway forwards to `CATALOG_SERVICE` (`http://catalog-service:8083`). Catalog service health: `GET /health`. Planned: `GET {RECOMMENDER_URL}/api/v1/recommendations/{userId}?limit=N` → `[{ productId, score }]`.
+Service contracts: web calls the catalogue via `CATALOG_API_URL` (gateway, default `http://localhost:8080/api/catalog`); the gateway forwards to `CATALOG_SERVICE` (`http://catalog-service:8083`). Catalog service health: `GET /health`. The gateway forwards `/api/orders` (`auth_mode: optional`) and `/api/cart` (`auth_mode: required`) to `ORDER_SERVICE` (`http://order-service:8084`), both with `retry.attempts: 1` because gateway retries apply to every method. Order service health: `GET /health`. Planned: `GET {RECOMMENDER_URL}/api/v1/recommendations/{userId}?limit=N` → `[{ productId, score }]`.
 
 ## Layout
 
@@ -47,7 +49,7 @@ apps/web/            Next.js 16 app (src/ dir, App Router, Tailwind 4, alias @/*
 apps/api-gateway/    Go: cmd/server, configs/{routes.yaml,.env}, deploy/{prometheus,loki}, Dockerfile, compose.yaml
 apps/catalog-service/ Go: cmd/server, cmd/seed, migrations/, seed/books.jsonl.gz, Dockerfile, compose.yaml (own SQL Server)
 apps/user-service/   Nest.js (scaffold)
-apps/order-service/  Nest.js (scaffold)
+apps/order-service/  Go: cmd/server, internal/{config,database,logger,router}, migrations/ (empty), Dockerfile, compose.yaml (own SQL Server)
 apps/recommender/    FastAPI: app/{api,core,db,schemas,services,ml}, tests/, notebooks/ (empty)
 apps/functions/      Azure Functions v4 (Node.js/TypeScript); function registrations under src/functions/
 infra/               compose.yaml (shared local infra: redis, rabbitmq, jaeger, prometheus, grafana, loki, promtail)
@@ -68,9 +70,13 @@ Web (run in `apps/web`):
 Local stack (Docker Compose):
 - Shared infra: `docker compose -f infra/compose.yaml up -d`
 - Catalog (DB → init → migrate → seed → service): `docker compose up --build` in `apps/catalog-service`
+- Order (DB → init → service): `docker compose up --build` in `apps/order-service`
 - Gateway: `docker compose up --build` in `apps/api-gateway` (needs `configs/.env`)
+- Whole stack: `docker compose up --build` at the repo root (includes infra, gateway, catalog, order)
 
-User / Order services (run in `apps/<service>`): `npm run start:dev`, `npm test`, `npm run lint`
+Order service (run in `apps/order-service`): `go run ./cmd/server` (reads `configs/.env`), `go test ./...`
+
+User service (run in `apps/user-service`): `npm run start:dev`, `npm test`, `npm run lint`
 
 Recommender (run in `apps/recommender`, once implemented): `uvicorn app.main:app --reload`, `pytest`, `ruff check .`
 
