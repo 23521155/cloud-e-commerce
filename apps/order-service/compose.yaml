@@ -1,7 +1,6 @@
 # order-service and its own SQL Server (database per service).
-# Start order: order-db -> order-db-init -> order-service.
-# The init job is idempotent, so `docker compose up` can be run again at any time.
-# TODO: add an order-migrate job (migrate/migrate) once migrations/ has its first migration.
+# Start order: order-db -> order-db-init -> order-migrate -> order-service.
+# Both jobs are idempotent, so `docker compose up` can be run again at any time.
 
 x-order-database-url: &order-database-url sqlserver://sa:${ORDER_DB_PASSWORD:-Order_dev_123}@order-db:1433?database=orders&encrypt=true&trustServerCertificate=true
 
@@ -44,6 +43,19 @@ services:
       - -Q
       - IF DB_ID('orders') IS NULL CREATE DATABASE orders
 
+  order-migrate:
+    image: migrate/migrate:v4.20.1
+    restart: "no"
+    depends_on:
+      order-db-init:
+        condition: service_completed_successfully
+    volumes:
+      - ./migrations:/migrations:ro
+    command:
+      - -path=/migrations
+      - -database=sqlserver://sa:${ORDER_DB_PASSWORD:-Order_dev_123}@order-db:1433?database=orders&encrypt=true&trustServerCertificate=true
+      - up
+
   order-service:
     image: order-service:local
     build:
@@ -51,7 +63,7 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     depends_on:
-      order-db-init:
+      order-migrate:
         condition: service_completed_successfully
     environment:
       PORT: "8084"
