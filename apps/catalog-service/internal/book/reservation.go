@@ -14,8 +14,8 @@ const (
 	StatusMissing   = "MISSING"
 )
 
-// Limits of one reservation request. They are repeated as literals in the
-// binding tags of the request structs.
+// Limits of one reservation request. The gRPC server checks them before a
+// request reaches the database (see MaxBatch for the number of ids).
 const (
 	MaxHolderLen   = 16 // reserved_by is NVARCHAR(16): an order code
 	MaxHoldSeconds = 3600
