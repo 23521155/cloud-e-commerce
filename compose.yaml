@@ -4,3 +4,4 @@ include:
   - ./infra/compose.yaml
   - ./apps/api-gateway/compose.yaml
   - ./apps/catalog-service/compose.yaml
+  - ./apps/order-service/compose.yaml

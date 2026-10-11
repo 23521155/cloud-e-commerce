@@ -10,6 +10,7 @@ services:
       - ./configs/.env
     environment:
       CATALOG_SERVICE: http://catalog-service:8083
+      ORDER_SERVICE: http://order-service:8084
       OTEL_ENDPOINT: jaeger:4317
     volumes:
       - gateway-logs:/app/logs
@@ -17,4 +18,5 @@ services:
       - "${GATEWAY_PORT:-8080}:8080"
     depends_on:
       - catalog-service
+      - order-service
       - jaeger

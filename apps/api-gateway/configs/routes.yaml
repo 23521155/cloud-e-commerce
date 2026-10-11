@@ -49,3 +49,50 @@ routes:
       burst: 30
 
     auth_mode: optional
+
+  # Checkout is open to guests: with a token the gateway forwards the user,
+  # without one the order is created as a guest order.
+  # attempts: 1 — retrying a POST that timed out could create a duplicate order.
+  - name: orders
+    prefix: /api/orders
+    upstream: ${ORDER_SERVICE}
+
+    timeout: 5s
+
+    retry:
+      attempts: 1
+      base_delay: 1s
+      max_delay: 3s
+
+    breaker:
+      enabled: true
+
+    rate_limit:
+      requests: 30
+      window: 1m
+      burst: 10
+
+    auth_mode: optional
+
+  # Server-side cart for signed-in users (guests keep theirs in localStorage).
+  # Lives in order-service for now; split it out by changing only the upstream.
+  - name: cart
+    prefix: /api/cart
+    upstream: ${ORDER_SERVICE}
+
+    timeout: 5s
+
+    retry:
+      attempts: 1
+      base_delay: 1s
+      max_delay: 3s
+
+    breaker:
+      enabled: true
+
+    rate_limit:
+      requests: 120
+      window: 1m
+      burst: 30
+
+    auth_mode: required
