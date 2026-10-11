@@ -52,6 +52,7 @@ func unavailableStatus(e *book.UnavailableError) error {
 	for i, b := range e.Books {
 		detail.Books[i] = &catalogv1.Unavailable{
 			Id:     int32(b.ID),
+			Slug:   b.Slug,
 			Status: toBookStatus(b.Status),
 		}
 	}

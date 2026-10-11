@@ -2,6 +2,7 @@ package grpcserver
 
 import (
 	"context"
+	"strings"
 
 	"github.com/fizzisme/catalog-service/internal/book"
 	catalogv1 "github.com/fizzisme/catalog-service/internal/pb/catalog/v1"
@@ -31,14 +32,20 @@ func toInts(in []int32) []int {
 	return out
 }
 
-// validateHolderAndIDs rejects requests that would otherwise reach SQL Server
+// The validate functions reject requests that would otherwise reach SQL Server
 // and fail there ("IN ()" is a syntax error, a long holder overflows its
 // column). gRPC checks nothing about the values inside a message.
-func validateHolderAndIDs(holder string, ids []int32) error {
+
+func validateHolder(holder string) error {
 
 	if holder == "" || len(holder) > book.MaxHolderLen {
 		return status.Errorf(codes.InvalidArgument, "holder must be 1 to %d characters", book.MaxHolderLen)
 	}
+
+	return nil
+}
+
+func validateIDs(ids []int32) error {
 
 	if len(ids) == 0 || len(ids) > book.MaxBatch {
 		return status.Errorf(codes.InvalidArgument, "ids must hold 1 to %d books", book.MaxBatch)
@@ -51,6 +58,37 @@ func validateHolderAndIDs(holder string, ids []int32) error {
 	}
 
 	return nil
+}
+
+func validateSlugs(slugs []string) error {
+
+	if len(slugs) == 0 || len(slugs) > book.MaxBatch {
+		return status.Errorf(codes.InvalidArgument, "slugs must hold 1 to %d books", book.MaxBatch)
+	}
+
+	for _, slug := range slugs {
+
+		slug = strings.TrimSpace(slug)
+
+		if slug == "" {
+			return status.Error(codes.InvalidArgument, "slugs must not be empty")
+		}
+		if len(slug) > book.MaxSlugLen {
+			return status.Errorf(codes.InvalidArgument, "a slug is at most %d characters", book.MaxSlugLen)
+		}
+	}
+
+	return nil
+}
+
+// validateHolderAndIDs is the check of Release and Sell, which name books by id.
+func validateHolderAndIDs(holder string, ids []int32) error {
+
+	if err := validateHolder(holder); err != nil {
+		return err
+	}
+
+	return validateIDs(ids)
 }
 
 func (s *ReservationServer) Release(ctx context.Context, req *catalogv1.ReleaseRequest) (*catalogv1.ReleaseResponse, error) {
@@ -85,8 +123,13 @@ func (s *ReservationServer) ReleaseExpired(ctx context.Context, req *catalogv1.R
 	return &catalogv1.ReleaseExpiredResponse{Released: int32(n)}, nil
 }
 
+// Reserve names the books by slug, the only name the shop knows them by; the
+// answer carries their ids, which Release and Sell use.
 func (s *ReservationServer) Reserve(ctx context.Context, req *catalogv1.ReserveRequest) (*catalogv1.ReserveResponse, error) {
-	if err := validateHolderAndIDs(req.GetHolder(), req.GetIds()); err != nil {
+	if err := validateHolder(req.GetHolder()); err != nil {
+		return nil, err
+	}
+	if err := validateSlugs(req.GetSlugs()); err != nil {
 		return nil, err
 	}
 
@@ -95,7 +138,7 @@ func (s *ReservationServer) Reserve(ctx context.Context, req *catalogv1.ReserveR
 		return nil, status.Errorf(codes.InvalidArgument, "ttl_seconds must be 1 to %d", book.MaxHoldSeconds)
 	}
 
-	r, err := s.svc.Reserve(ctx, req.GetHolder(), int(req.GetTtlSeconds()), toInts(req.GetIds()))
+	r, err := s.svc.Reserve(ctx, req.GetHolder(), int(req.GetTtlSeconds()), req.GetSlugs())
 	if err != nil {
 		return nil, toStatusError("Reserve", err)
 	}

@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// Book statuses. MISSING is not stored: it is reported for an id that is not
+// Book statuses. MISSING is not stored: it is reported for a book that is not
 // in the catalogue at all.
 const (
 	StatusAvailable = "AVAILABLE"
@@ -15,10 +15,11 @@ const (
 )
 
 // Limits of one reservation request. The gRPC server checks them before a
-// request reaches the database (see MaxBatch for the number of ids).
+// request reaches the database (see MaxBatch for the number of books).
 const (
 	MaxHolderLen   = 16 // reserved_by is NVARCHAR(16): an order code
 	MaxHoldSeconds = 3600
+	MaxSlugLen     = 100 // books.slug is NVARCHAR(100)
 )
 
 // Held is a reserved book as the order service needs it: the snapshot it
@@ -42,8 +43,13 @@ type Reservation struct {
 
 // Unavailable is one book that could not be reserved or sold, with the
 // status that stopped it so the shop can say "sold" or "someone is paying".
+//
+// A request names books by slug (Reserve) or by id (Sell), and the other one
+// is filled in when the book exists. For a MISSING book only what the caller
+// asked with is known: ID is 0 for a slug, Slug is "" for an id.
 type Unavailable struct {
 	ID     int    `json:"id"`
+	Slug   string `json:"slug"`
 	Status string `json:"status"`
 }
 
