@@ -69,6 +69,12 @@ services:
       PORT: "8084"
       GIN_MODE: release
       DATABASE_URL: *order-database-url
+      # The catalogue is in the root compose project; started on its own this
+      # service still boots, because the gRPC connection is lazy.
+      CATALOG_GRPC_ADDR: catalog-service:9083
+      # Same value as the catalogue; dev default only.
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-dev-internal-token}
+      PAYMENT_HOLD_MINUTES: "15"
     ports:
       - "${ORDER_PORT:-8084}:8084"
     healthcheck:

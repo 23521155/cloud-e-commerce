@@ -26,13 +26,14 @@ type fakeStore struct {
 
 	gotHolder string
 	gotTTL    int
+	gotSlugs  []string
 	gotIDs    []int
 	calls     int
 }
 
-func (f *fakeStore) Reserve(_ context.Context, holder string, ttl int, ids []int) ([]book.Held, error) {
+func (f *fakeStore) Reserve(_ context.Context, holder string, ttl int, slugs []string) ([]book.Held, error) {
 	f.calls++
-	f.gotHolder, f.gotTTL, f.gotIDs = holder, ttl, ids
+	f.gotHolder, f.gotTTL, f.gotSlugs = holder, ttl, slugs
 	return f.held, f.err
 }
 
@@ -127,6 +128,46 @@ func TestValidateHolderAndIDs(t *testing.T) {
 	}
 }
 
+func TestValidateSlugs(t *testing.T) {
+
+	slugs := func(n int) []string {
+		out := make([]string, n)
+		for i := range out {
+			out[i] = fmt.Sprintf("book-%d", i)
+		}
+		return out
+	}
+
+	tests := []struct {
+		name  string
+		slugs []string
+		ok    bool
+	}{
+		{"valid", slugs(2), true},
+		{"at the batch limit", slugs(book.MaxBatch), true},
+		{"a slug at the length limit", []string{strings.Repeat("a", book.MaxSlugLen)}, true},
+		{"none", nil, false},
+		{"too many", slugs(book.MaxBatch + 1), false},
+		{"an empty slug", []string{"heidi-b1", ""}, false},
+		{"a blank slug", []string{"   "}, false},
+		{"a slug that is too long", []string{strings.Repeat("a", book.MaxSlugLen+1)}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+
+			err := validateSlugs(tt.slugs)
+
+			if tt.ok && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !tt.ok && status.Code(err) != codes.InvalidArgument {
+				t.Fatalf("code = %v, want InvalidArgument (err: %v)", status.Code(err), err)
+			}
+		})
+	}
+}
+
 func TestReserveReturnsSnapshotAndExpiry(t *testing.T) {
 
 	until := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
@@ -139,7 +180,7 @@ func TestReserveReturnsSnapshotAndExpiry(t *testing.T) {
 	client := newClient(t, store)
 
 	res, err := client.Reserve(context.Background(), &catalogv1.ReserveRequest{
-		Holder: "BK-1", TtlSeconds: 900, Ids: []int32{9, 7, 7},
+		Holder: "BK-1", TtlSeconds: 900, Slugs: []string{"Emma", "heidi", "HEIDI"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -163,18 +204,22 @@ func TestReserveReturnsSnapshotAndExpiry(t *testing.T) {
 		t.Errorf("reservedUntil = %v, want %v", res.GetReservedUntil().AsTime(), until)
 	}
 
-	// The service deduplicates and sorts before it reaches the store.
-	if store.gotHolder != "BK-1" || store.gotTTL != 900 || fmt.Sprint(store.gotIDs) != "[7 9]" {
-		t.Errorf("store got %q %d %v", store.gotHolder, store.gotTTL, store.gotIDs)
+	// The service lower-cases, deduplicates and sorts before the store.
+	if store.gotHolder != "BK-1" || store.gotTTL != 900 || fmt.Sprint(store.gotSlugs) != "[emma heidi]" {
+		t.Errorf("store got %q %d %v", store.gotHolder, store.gotTTL, store.gotSlugs)
+	}
+	if heidi.GetSlug() != "heidi" || emma.GetSlug() != "emma" {
+		t.Errorf("slugs = %q / %q", heidi.GetSlug(), emma.GetSlug())
 	}
 }
 
 func TestUnavailableBooksAreFailedPreconditionWithDetails(t *testing.T) {
 
+	// A slug that does not exist has no id; an id that does not exist has no slug.
 	conflict := &book.UnavailableError{Books: []book.Unavailable{
-		{ID: 3, Status: book.StatusSold},
-		{ID: 5, Status: book.StatusReserved},
-		{ID: 8, Status: book.StatusMissing},
+		{ID: 3, Slug: "heidi-b3", Status: book.StatusSold},
+		{ID: 5, Slug: "kim-b5", Status: book.StatusReserved},
+		{Slug: "no-such-book", Status: book.StatusMissing},
 	}}
 
 	// Reserve and Sell can both fail this way; wrapping must not hide it.
@@ -183,7 +228,7 @@ func TestUnavailableBooksAreFailedPreconditionWithDetails(t *testing.T) {
 
 	calls := map[string]func() error{
 		"Reserve": func() error {
-			_, err := client.Reserve(ctx, &catalogv1.ReserveRequest{Holder: "BK-1", TtlSeconds: 60, Ids: []int32{3, 5, 8}})
+			_, err := client.Reserve(ctx, &catalogv1.ReserveRequest{Holder: "BK-1", TtlSeconds: 60, Slugs: []string{"heidi-b3", "kim-b5", "no-such-book"}})
 			return err
 		},
 		"Sell": func() error {
@@ -212,15 +257,17 @@ func TestUnavailableBooksAreFailedPreconditionWithDetails(t *testing.T) {
 
 			want := []struct {
 				id     int32
+				slug   string
 				status catalogv1.BookStatus
 			}{
-				{3, catalogv1.BookStatus_BOOK_STATUS_SOLD},
-				{5, catalogv1.BookStatus_BOOK_STATUS_RESERVED},
-				{8, catalogv1.BookStatus_BOOK_STATUS_MISSING},
+				{3, "heidi-b3", catalogv1.BookStatus_BOOK_STATUS_SOLD},
+				{5, "kim-b5", catalogv1.BookStatus_BOOK_STATUS_RESERVED},
+				{0, "no-such-book", catalogv1.BookStatus_BOOK_STATUS_MISSING},
 			}
 			for i, w := range want {
-				if got.Books[i].GetId() != w.id || got.Books[i].GetStatus() != w.status {
-					t.Errorf("book %d = %v, want id %d status %v", i, got.Books[i], w.id, w.status)
+				b := got.Books[i]
+				if b.GetId() != w.id || b.GetSlug() != w.slug || b.GetStatus() != w.status {
+					t.Errorf("book %d = %v, want id %d slug %q status %v", i, b, w.id, w.slug, w.status)
 				}
 			}
 		})
@@ -234,7 +281,7 @@ func TestUnexpectedErrorsDoNotLeak(t *testing.T) {
 
 	calls := map[string]func() error{
 		"Reserve": func() error {
-			_, err := client.Reserve(ctx, &catalogv1.ReserveRequest{Holder: "BK-1", TtlSeconds: 60, Ids: []int32{1}})
+			_, err := client.Reserve(ctx, &catalogv1.ReserveRequest{Holder: "BK-1", TtlSeconds: 60, Slugs: []string{"heidi-b1"}})
 			return err
 		},
 		"Release": func() error {
@@ -296,14 +343,29 @@ func TestInvalidRequestsNeverReachTheStore(t *testing.T) {
 	client := newClient(t, store)
 	ctx := context.Background()
 
-	_, err := client.Reserve(ctx, &catalogv1.ReserveRequest{Holder: "BK-1", TtlSeconds: book.MaxHoldSeconds + 1, Ids: []int32{1}})
+	_, err := client.Reserve(ctx, &catalogv1.ReserveRequest{Holder: "BK-1", TtlSeconds: book.MaxHoldSeconds + 1, Slugs: []string{"heidi-b1"}})
 	if status.Code(err) != codes.InvalidArgument {
 		t.Errorf("ttl above the limit: code = %v, want InvalidArgument", status.Code(err))
 	}
 
-	_, err = client.Reserve(ctx, &catalogv1.ReserveRequest{Holder: "BK-1", TtlSeconds: 0, Ids: []int32{1}})
+	_, err = client.Reserve(ctx, &catalogv1.ReserveRequest{Holder: "BK-1", TtlSeconds: 0, Slugs: []string{"heidi-b1"}})
 	if status.Code(err) != codes.InvalidArgument {
 		t.Errorf("zero ttl: code = %v, want InvalidArgument", status.Code(err))
+	}
+
+	_, err = client.Reserve(ctx, &catalogv1.ReserveRequest{Holder: "BK-1", TtlSeconds: 60})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("reserve without slugs: code = %v, want InvalidArgument", status.Code(err))
+	}
+
+	_, err = client.Reserve(ctx, &catalogv1.ReserveRequest{Holder: "BK-1", TtlSeconds: 60, Slugs: []string{"heidi-b1", " "}})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("reserve with a blank slug: code = %v, want InvalidArgument", status.Code(err))
+	}
+
+	_, err = client.Reserve(ctx, &catalogv1.ReserveRequest{Holder: "", TtlSeconds: 60, Slugs: []string{"heidi-b1"}})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("reserve without holder: code = %v, want InvalidArgument", status.Code(err))
 	}
 
 	_, err = client.Release(ctx, &catalogv1.ReleaseRequest{Holder: "BK-1"})

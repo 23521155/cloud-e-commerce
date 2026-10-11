@@ -1,14 +1,16 @@
 package book
 
 import (
+	"cmp"
 	"context"
 	"slices"
+	"strings"
 )
 
 // reservationStore is what the reservation service needs from the
 // repository; tests replace it with a fake.
 type reservationStore interface {
-	Reserve(ctx context.Context, holder string, ttlSeconds int, ids []int) ([]Held, error)
+	Reserve(ctx context.Context, holder string, ttlSeconds int, slugs []string) ([]Held, error)
 	Release(ctx context.Context, holder string, ids []int) (int, error)
 	Sell(ctx context.Context, holder string, ids []int) error
 	ReleaseExpired(ctx context.Context) (int, error)
@@ -22,20 +24,34 @@ func NewReservationService(store reservationStore) *ReservationService {
 	return &ReservationService{store: store}
 }
 
-// normalise drops duplicate ids and sorts the rest. Sorting makes every
+// normalise drops duplicate values and sorts the rest. Sorting makes every
 // order lock its books in the same sequence, which avoids deadlocks.
-func normalise(ids []int) []int {
+func normalise[T cmp.Ordered](values []T) []T {
 
-	out := slices.Clone(ids)
+	out := slices.Clone(values)
 	slices.Sort(out)
 
 	return slices.Compact(out)
 }
 
-// Reserve holds the books for holder. See Repository.Reserve.
-func (s *ReservationService) Reserve(ctx context.Context, holder string, ttlSeconds int, ids []int) (Reservation, error) {
+// normaliseSlugs trims and lower-cases the slugs before normalise. SQL Server
+// compares them without regard to case, so "Heidi" and "heidi" would match
+// one row and make a request for two books look like a request that came
+// up short.
+func normaliseSlugs(slugs []string) []string {
 
-	held, err := s.store.Reserve(ctx, holder, ttlSeconds, normalise(ids))
+	out := make([]string, len(slugs))
+	for i, slug := range slugs {
+		out[i] = strings.ToLower(strings.TrimSpace(slug))
+	}
+
+	return normalise(out)
+}
+
+// Reserve holds the books with the given slugs for holder. See Repository.Reserve.
+func (s *ReservationService) Reserve(ctx context.Context, holder string, ttlSeconds int, slugs []string) (Reservation, error) {
+
+	held, err := s.store.Reserve(ctx, holder, ttlSeconds, normaliseSlugs(slugs))
 	if err != nil {
 		return Reservation{}, err
 	}

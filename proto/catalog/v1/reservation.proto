@@ -9,7 +9,9 @@ import "google/protobuf/timestamp.proto";
 message ReserveRequest {
     string holder = 1;
     int64 ttl_seconds = 2;
-    repeated int32 ids = 3;
+    reserved 3;
+    reserved "ids";
+    repeated string slugs = 4;
 }
 
 message Held {
@@ -64,6 +66,7 @@ enum BookStatus {
 message Unavailable {
     int32 id = 1;
     BookStatus status = 2;
+    string slug = 3;
 }
 
 // Attached to a FAILED_PRECONDITION error (status.WithDetails) when

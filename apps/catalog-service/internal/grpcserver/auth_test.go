@@ -136,7 +136,7 @@ func TestTokenAuthGuardsEveryRPC(t *testing.T) {
 
 	calls := map[string]func() error{
 		"Reserve": func() error {
-			_, err := client.Reserve(ctx, &catalogv1.ReserveRequest{Holder: "BK-1", TtlSeconds: 60, Ids: []int32{1}})
+			_, err := client.Reserve(ctx, &catalogv1.ReserveRequest{Holder: "BK-1", TtlSeconds: 60, Slugs: []string{"heidi-b1"}})
 			return err
 		},
 		"Release": func() error {

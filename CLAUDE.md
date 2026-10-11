@@ -34,7 +34,7 @@ University course project (đồ án): an e-commerce (book store) platform built
 | IaC | Bicep, one module per concern in `infra/modules/` | Native Azure |
 | CI/CD | GitHub Actions, Azure login via OIDC | No stored Azure secrets |
 | Service-to-service | **gRPC** for calls that need an answer now; a message broker for everything that does not (broker choice still open, see Messaging). No HTTP between services. Contracts live in `proto/`; the generated Go code is committed in each service (`internal/pb`) | The gateway stays HTTP for browsers; gRPC stays inside the backend |
-| Book reservation | Every book is a single copy (`AVAILABLE` / `RESERVED` / `SOLD`). Catalog serves `ReservationService` (`Reserve`, `Release`, `Sell`, `ReleaseExpired`) on gRPC port 9083 (`GRPC_PORT`). A hold records `reserved_by` (the order code) and `reserved_until`. Calls carry `x-internal-token` = `INTERNAL_TOKEN`; the gRPC server does not start without it | One UPDATE decides when two orders race for the same copy, all or nothing |
+| Book reservation | Every book is a single copy (`AVAILABLE` / `RESERVED` / `SOLD`). Catalog serves `ReservationService` (`Reserve`, `Release`, `Sell`, `ReleaseExpired`) on gRPC port 9083 (`GRPC_PORT`). `Reserve` names books by **slug** (the only name the web knows; ids are not in the public API) and answers with each book's id, slug and price; `Release` and `Sell` take those ids. A refusal lists each book with its status and whichever of id and slug is known. A hold records `reserved_by` (the order code) and `reserved_until`. Calls carry `x-internal-token` = `INTERNAL_TOKEN`; the gRPC server does not start without it. The order service calls it through `internal/catalogclient` (`CATALOG_GRPC_ADDR`, `CATALOG_GRPC_TLS`, same `INTERNAL_TOKEN`); a timed-out `Reserve` has an unknown outcome, so release the books | One UPDATE decides when two orders race for the same copy, all or nothing |
 | Budget | Azure for Students credit ($100, 12 months; the subscription is disabled when it runs out). Prefer free tiers (e.g. the Azure SQL free offer, up to 10 free databases); say what a resource costs before adding a paid one | Cost decides infrastructure choices |
 
 Service contracts: web calls the catalogue via `CATALOG_API_URL` (gateway, default `http://localhost:8080/api/catalog`); the gateway forwards to `CATALOG_SERVICE` (`http://catalog-service:8083`). Catalog service health: `GET /health`. The gateway forwards `/api/orders` (`auth_mode: optional`) and `/api/cart` (`auth_mode: required`) to `ORDER_SERVICE` (`http://order-service:8084`), both with `retry.attempts: 1` because gateway retries apply to every method. Order service health: `GET /health`. Planned: `GET {RECOMMENDER_URL}/api/v1/recommendations/{userId}?limit=N` → `[{ productId, score }]`.
@@ -52,7 +52,7 @@ apps/web/            Next.js 16 app (src/ dir, App Router, Tailwind 4, alias @/*
 apps/api-gateway/    Go: cmd/server, configs/{routes.yaml,.env}, deploy/{prometheus,loki}, Dockerfile, compose.yaml
 apps/catalog-service/ Go: cmd/server, cmd/seed, internal/{book,grpcserver,pb,...}, migrations/, seed/books.jsonl.gz, Dockerfile, compose.yaml (own SQL Server)
 apps/user-service/   Nest.js (scaffold)
-apps/order-service/  Go: cmd/server, internal/{config,database,logger,router}, migrations/ (empty), Dockerfile, compose.yaml (own SQL Server)
+apps/order-service/  Go: cmd/server, internal/{catalogclient,config,database,logger,pb,router}, migrations/, Dockerfile, compose.yaml (own SQL Server)
 apps/recommender/    FastAPI: app/{api,core,db,schemas,services,ml}, tests/, notebooks/ (empty)
 apps/functions/      Azure Functions v4 (Node.js/TypeScript); function registrations under src/functions/
 proto/               Protobuf contracts (catalog/v1/reservation.proto); Go code is generated into each service's internal/pb
@@ -90,7 +90,7 @@ Functions (run in `apps/functions`):
 - Core Tools: `npm i -g azure-functions-core-tools@4`
 
 Protobuf / gRPC (run at the repo root; `protoc` and both Go plugins must be on PATH: `winget install Google.Protobuf`, then `go install google.golang.org/protobuf/cmd/protoc-gen-go@latest` and `go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest`):
-- Generate: `protoc -I proto --go_out=apps/catalog-service/internal/pb --go_opt=paths=source_relative --go-grpc_out=apps/catalog-service/internal/pb --go-grpc_opt=paths=source_relative catalog/v1/reservation.proto`
+- Generate: `protoc -I proto --go_out=apps/catalog-service/internal/pb --go_opt=paths=source_relative --go-grpc_out=apps/catalog-service/internal/pb --go-grpc_opt=paths=source_relative catalog/v1/reservation.proto`. The order service calls the catalogue with the same contract: run it again with `apps/order-service/internal/pb` as the output directory.
 - Re-run after every `.proto` change and commit the generated code (Docker builds do not run `protoc`).
 - Try the catalog gRPC port: `grpcurl -plaintext -import-path proto -proto catalog/v1/reservation.proto -H "x-internal-token: <token>" -d '{}' localhost:9083 catalog.v1.ReservationService/ReleaseExpired`. Server reflection is off on purpose, so pass the `.proto`.
 
