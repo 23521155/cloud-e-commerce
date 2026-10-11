@@ -15,6 +15,13 @@ type Config struct {
 
 	// DatabaseURL is a sqlserver:// URL, also used by golang-migrate.
 	DatabaseURL string
+
+	// InternalToken is the shared secret for the gRPC calls made by other
+	// services. When empty the gRPC server is not started at all.
+	InternalToken string
+
+	// GRPCPort is where the gRPC server listens, next to the HTTP Port.
+	GRPCPort string
 }
 
 // Load reads environment variables (via a .env file) into a Config.
@@ -32,6 +39,10 @@ func Load() (*Config, error) {
 		Port: getEnv("PORT", "8083"),
 
 		DatabaseURL: os.Getenv("DATABASE_URL"),
+
+		InternalToken: os.Getenv("INTERNAL_TOKEN"),
+
+		GRPCPort: getEnv("GRPC_PORT", "9083"),
 	}
 
 	return cfg, nil

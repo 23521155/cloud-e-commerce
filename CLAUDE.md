@@ -33,6 +33,9 @@ University course project (đồ án): an e-commerce (book store) platform built
 | Monitoring (Azure) | Application Insights (workspace-based) + Log Analytics + Azure Monitor metric alerts → email action group | Required by the course |
 | IaC | Bicep, one module per concern in `infra/modules/` | Native Azure |
 | CI/CD | GitHub Actions, Azure login via OIDC | No stored Azure secrets |
+| Service-to-service | **gRPC** for calls that need an answer now; a message broker for everything that does not (broker choice still open, see Messaging). No HTTP between services. Contracts live in `proto/`; the generated Go code is committed in each service (`internal/pb`) | The gateway stays HTTP for browsers; gRPC stays inside the backend |
+| Book reservation | Every book is a single copy (`AVAILABLE` / `RESERVED` / `SOLD`). Catalog serves `ReservationService` (`Reserve`, `Release`, `Sell`, `ReleaseExpired`) on gRPC port 9083 (`GRPC_PORT`). A hold records `reserved_by` (the order code) and `reserved_until`. Calls carry `x-internal-token` = `INTERNAL_TOKEN`; the gRPC server does not start without it | One UPDATE decides when two orders race for the same copy, all or nothing |
+| Budget | Azure for Students credit ($100, 12 months; the subscription is disabled when it runs out). Prefer free tiers (e.g. the Azure SQL free offer, up to 10 free databases); say what a resource costs before adding a paid one | Cost decides infrastructure choices |
 
 Service contracts: web calls the catalogue via `CATALOG_API_URL` (gateway, default `http://localhost:8080/api/catalog`); the gateway forwards to `CATALOG_SERVICE` (`http://catalog-service:8083`). Catalog service health: `GET /health`. The gateway forwards `/api/orders` (`auth_mode: optional`) and `/api/cart` (`auth_mode: required`) to `ORDER_SERVICE` (`http://order-service:8084`), both with `retry.attempts: 1` because gateway retries apply to every method. Order service health: `GET /health`. Planned: `GET {RECOMMENDER_URL}/api/v1/recommendations/{userId}?limit=N` → `[{ productId, score }]`.
 
@@ -47,11 +50,12 @@ apps/web/            Next.js 16 app (src/ dir, App Router, Tailwind 4, alias @/*
   src/app/api        Route Handlers
   src/lib            prisma client singleton, auth, catalogue client (catalogue.ts)
 apps/api-gateway/    Go: cmd/server, configs/{routes.yaml,.env}, deploy/{prometheus,loki}, Dockerfile, compose.yaml
-apps/catalog-service/ Go: cmd/server, cmd/seed, migrations/, seed/books.jsonl.gz, Dockerfile, compose.yaml (own SQL Server)
+apps/catalog-service/ Go: cmd/server, cmd/seed, internal/{book,grpcserver,pb,...}, migrations/, seed/books.jsonl.gz, Dockerfile, compose.yaml (own SQL Server)
 apps/user-service/   Nest.js (scaffold)
 apps/order-service/  Go: cmd/server, internal/{config,database,logger,router}, migrations/ (empty), Dockerfile, compose.yaml (own SQL Server)
 apps/recommender/    FastAPI: app/{api,core,db,schemas,services,ml}, tests/, notebooks/ (empty)
 apps/functions/      Azure Functions v4 (Node.js/TypeScript); function registrations under src/functions/
+proto/               Protobuf contracts (catalog/v1/reservation.proto); Go code is generated into each service's internal/pb
 infra/               compose.yaml (shared local infra: redis, rabbitmq, jaeger, prometheus, grafana, loki, promtail)
   grafana/           Grafana provisioning + dashboards
   modules/, parameters/  Bicep for Azure (empty)
@@ -85,6 +89,11 @@ Functions (run in `apps/functions`):
 - `func new --template "<template>" --name <name>` adds a function; `func templates list` lists templates
 - Core Tools: `npm i -g azure-functions-core-tools@4`
 
+Protobuf / gRPC (run at the repo root; `protoc` and both Go plugins must be on PATH: `winget install Google.Protobuf`, then `go install google.golang.org/protobuf/cmd/protoc-gen-go@latest` and `go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest`):
+- Generate: `protoc -I proto --go_out=apps/catalog-service/internal/pb --go_opt=paths=source_relative --go-grpc_out=apps/catalog-service/internal/pb --go-grpc_opt=paths=source_relative catalog/v1/reservation.proto`
+- Re-run after every `.proto` change and commit the generated code (Docker builds do not run `protoc`).
+- Try the catalog gRPC port: `grpcurl -plaintext -import-path proto -proto catalog/v1/reservation.proto -H "x-internal-token: <token>" -d '{}' localhost:9083 catalog.v1.ReservationService/ReleaseExpired`. Server reflection is off on purpose, so pass the `.proto`.
+
 ## Version gotchas — check docs, not memory
 
 - **Next.js 16** has breaking changes. Read `apps/web/node_modules/next/dist/docs/` before writing Next.js code (see `apps/web/AGENTS.md`).
@@ -92,6 +101,8 @@ Functions (run in `apps/functions`):
 - Prisma dev tooling warns on Node 20; use Node 22.
 - Azure SQL connection strings need `encrypt=true`; local SQL Server containers also need `trustServerCertificate=true`.
 - The recommender Docker image must install `msodbcsql18` for pyodbc.
+- **gRPC on Azure App Service** (Linux only): set HTTP version 2.0, HTTP 2.0 Proxy "gRPC only", and the app setting `HTTP20_ONLY_PORT` (a second port for HTTP/2). Calls must use TLS, client certificates are not supported (so no mTLS), and a gRPC call times out after 20 minutes idle. A custom container must still serve HTTP/1.1.
+- **golang-migrate on SQL Server** sends each migration file as one batch, so a statement that names a column added earlier in the same file fails with "Invalid column name": wrap it in `EXEC(N'...')`. Avoid filtered indexes on tables edited from tools with `QUOTED_IDENTIFIER` off (sqlcmd without `-I`): every UPDATE on the table then fails with error 1934.
 
 ## Environment
 
@@ -103,3 +114,4 @@ Functions (run in `apps/functions`):
 - Read the relevant files first; don't assume structure.
 - Surgical changes only. Confirm before touching more than 3 files.
 - Conventional commits (`feat/fix/chore/refactor/docs`). Propose branch name + commit message and wait for approval. Never push to `main`.
+- The integration branch is `develop`: branch from `origin/develop` and open PRs into `develop`. `main` only holds the initial commit (switching to local `main` removes `apps/` from the working tree).

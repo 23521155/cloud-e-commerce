@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -12,15 +13,17 @@ import (
 	"github.com/fizzisme/catalog-service/internal/book"
 	"github.com/fizzisme/catalog-service/internal/config"
 	"github.com/fizzisme/catalog-service/internal/database"
+	"github.com/fizzisme/catalog-service/internal/grpcserver"
 	"github.com/fizzisme/catalog-service/internal/logger"
 	"github.com/fizzisme/catalog-service/internal/router"
 	"github.com/fizzisme/catalog-service/internal/subject"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
 )
 
 // main is the entry point of the catalog service. It wires up config
-// and logging, starts the HTTP server, and handles graceful shutdown
-// on SIGINT/SIGTERM.
+// and logging, starts the HTTP server and the gRPC server, and handles
+// graceful shutdown on SIGINT/SIGTERM.
 func main() {
 
 	if err := logger.Init(); err != nil {
@@ -55,7 +58,8 @@ func main() {
 		zap.String("port", cfg.Port),
 	)
 
-	bookHandler := book.NewHandler(book.NewService(book.NewRepository(db)))
+	bookRepo := book.NewRepository(db)
+	bookHandler := book.NewHandler(book.NewService(bookRepo))
 	subjectHandler := subject.NewHandler(subject.NewRepository(db))
 
 	r := router.SetupRouter(db, bookHandler, subjectHandler)
@@ -87,6 +91,43 @@ func main() {
 		}
 	}()
 
+	// Other services reserve and sell books over gRPC. Without the shared
+	// secret the port would be open to anyone who can reach it, so the
+	// server does not start.
+	var grpcSrv *grpc.Server
+
+	if cfg.InternalToken == "" {
+		logger.Log.Warn("INTERNAL_TOKEN is not set: the gRPC server is disabled")
+	} else {
+
+		lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
+		if err != nil {
+			logger.Log.Fatal(
+				"cannot listen for gRPC",
+				zap.String("port", cfg.GRPCPort),
+				zap.Error(err),
+			)
+		}
+
+		grpcSrv = grpcserver.New(cfg.InternalToken, book.NewReservationService(bookRepo))
+
+		go func() {
+
+			logger.Log.Info(
+				"gRPC server started",
+				zap.String("port", cfg.GRPCPort),
+			)
+
+			// Serve returns nil after GracefulStop or Stop.
+			if err := grpcSrv.Serve(lis); err != nil {
+				logger.Log.Fatal(
+					"cannot start gRPC server",
+					zap.Error(err),
+				)
+			}
+		}()
+	}
+
 	quit := make(chan os.Signal, 1)
 
 	// os.Interrupt: Ctrl+C; SIGTERM: sent by Docker / App Service on stop.
@@ -109,6 +150,25 @@ func main() {
 	)
 
 	defer cancel()
+
+	if grpcSrv != nil {
+
+		stopped := make(chan struct{})
+
+		// GracefulStop waits for running calls, so a reservation that has
+		// started is finished. A client that never ends its call must not
+		// hold the shutdown, hence the deadline.
+		go func() {
+			grpcSrv.GracefulStop()
+			close(stopped)
+		}()
+
+		select {
+		case <-stopped:
+		case <-ctx.Done():
+			grpcSrv.Stop()
+		}
+	}
 
 	if err := srv.Shutdown(ctx); err != nil {
 		logger.Log.Fatal(

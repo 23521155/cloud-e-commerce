@@ -1,0 +1,80 @@
+syntax = "proto3";
+
+package catalog.v1;
+
+option go_package = "github.com/fizzisme/cloud-e-commerce/proto/catalog/v1;catalogv1";
+
+import "google/protobuf/timestamp.proto";
+
+message ReserveRequest {
+    string holder = 1;
+    int64 ttl_seconds = 2;
+    repeated int32 ids = 3;
+}
+
+message Held {
+    int32 id = 1;
+    string slug = 2;
+    string title = 3;
+    optional string author = 4;
+    optional string cover_url = 5;
+    int64 price_vnd = 6;
+}
+
+message ReserveResponse {
+    repeated Held items = 1;
+    google.protobuf.Timestamp reserved_until = 2;
+}
+
+message ReleaseRequest {
+    string holder = 1;
+    repeated int32 ids = 2;
+}
+
+message ReleaseResponse {
+    int32 released = 1;
+}
+
+message SellRequest {
+    string holder = 1;
+    repeated int32 ids = 2;
+}
+
+// Nothing to return: success is the OK status. A message (not Empty) so a
+// field can be added later without changing the RPC signature.
+message SellResponse {}
+
+message ReleaseExpiredRequest {}
+
+message ReleaseExpiredResponse {
+    int32 released = 1;
+}
+
+// Why a book could not be reserved or sold. 0 is the default when the field
+// is not sent, so it must mean "unknown", never a real status.
+enum BookStatus {
+    BOOK_STATUS_UNSPECIFIED = 0;
+    BOOK_STATUS_AVAILABLE = 1;
+    BOOK_STATUS_RESERVED = 2;
+    BOOK_STATUS_SOLD = 3;
+    // The id is not in the catalogue at all.
+    BOOK_STATUS_MISSING = 4;
+}
+
+message Unavailable {
+    int32 id = 1;
+    BookStatus status = 2;
+}
+
+// Attached to a FAILED_PRECONDITION error (status.WithDetails) when
+// Reserve or Sell could not be applied to every book. Nothing was changed.
+message UnavailableBooks {
+    repeated Unavailable books = 1;
+}
+
+service ReservationService {
+    rpc Reserve(ReserveRequest) returns (ReserveResponse);
+    rpc Release(ReleaseRequest) returns (ReleaseResponse);
+    rpc Sell(SellRequest) returns (SellResponse);
+    rpc ReleaseExpired(ReleaseExpiredRequest) returns (ReleaseExpiredResponse);
+}

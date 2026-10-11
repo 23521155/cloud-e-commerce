@@ -24,6 +24,6 @@ COPY seed/books.jsonl.gz ./seed/books.jsonl.gz
 
 USER catalog
 
-EXPOSE 8083
+EXPOSE 8083 9083
 
 ENTRYPOINT ["./catalog-service"]

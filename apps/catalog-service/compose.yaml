@@ -85,8 +85,12 @@ services:
       PORT: "8083"
       GIN_MODE: release
       DATABASE_URL: *catalog-database-url
+      GRPC_PORT: "9083"
+      # Shared with the order service; dev default only.
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-dev-internal-token}
     ports:
       - "${CATALOG_PORT:-8083}:8083"
+      - "${CATALOG_GRPC_PORT:-9083}:9083"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8083/health || exit 1"]
       interval: 10s
