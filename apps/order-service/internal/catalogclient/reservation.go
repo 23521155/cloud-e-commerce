@@ -10,12 +10,14 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// Reserve holds every book in ids for holder (an order code) for ttl, or none
-// of them. ttl is counted in whole seconds and must be at least one.
+// Reserve holds every book in slugs for holder (an order code) for ttl, or
+// none of them. Books are named by slug, the only name the shop knows them
+// by; the answer carries their ids, which Release and Sell take. ttl is
+// counted in whole seconds and must be at least one.
 //
 // When some books cannot be held the error is an *UnavailableError. An
 // ErrCatalogUnavailable error means the outcome is unknown: Release the books.
-func (c *Client) Reserve(ctx context.Context, holder string, ttl time.Duration, ids []int) (Reservation, error) {
+func (c *Client) Reserve(ctx context.Context, holder string, ttl time.Duration, slugs []string) (Reservation, error) {
 
 	if ttl < time.Second {
 		return Reservation{}, fmt.Errorf("%w: the hold must last at least one second", ErrInvalidRequest)
@@ -24,7 +26,7 @@ func (c *Client) Reserve(ctx context.Context, holder string, ttl time.Duration, 
 	res, err := c.rpc.Reserve(ctx, &catalogv1.ReserveRequest{
 		Holder:     holder,
 		TtlSeconds: int64(ttl / time.Second),
-		Ids:        toInt32s(ids),
+		Slugs:      slugs,
 	})
 	if err != nil {
 		return Reservation{}, translate(ctx, err)
@@ -142,6 +144,7 @@ func unavailableFrom(st *status.Status) error {
 		for _, b := range detail.GetBooks() {
 			e.Books = append(e.Books, Unavailable{
 				ID:     int(b.GetId()),
+				Slug:   b.GetSlug(),
 				Status: fromBookStatus(b.GetStatus()),
 			})
 		}

@@ -72,7 +72,7 @@ func callAll(c *Client) map[string]error {
 	ctx := context.Background()
 	out := map[string]error{}
 
-	_, out["Reserve"] = c.Reserve(ctx, "BK-1", time.Minute, []int{1})
+	_, out["Reserve"] = c.Reserve(ctx, "BK-1", time.Minute, []string{"heidi-b1"})
 	_, out["Release"] = c.Release(ctx, "BK-1", []int{1})
 	out["Sell"] = c.Sell(ctx, "BK-1", []int{1})
 
@@ -111,12 +111,12 @@ func TestReserveSendsTheRequestAndMapsTheAnswer(t *testing.T) {
 	}}
 	c := dialSpy(t, Config{Token: "s3cret"}, fake)
 
-	res, err := c.Reserve(context.Background(), "BK-1", 15*time.Minute, []int{7, 9})
+	res, err := c.Reserve(context.Background(), "BK-1", 15*time.Minute, []string{"heidi", "emma"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if got.GetHolder() != "BK-1" || got.GetTtlSeconds() != 900 || fmt.Sprint(got.GetIds()) != "[7 9]" {
+	if got.GetHolder() != "BK-1" || got.GetTtlSeconds() != 900 || fmt.Sprint(got.GetSlugs()) != "[heidi emma]" {
 		t.Errorf("the catalogue received %v", got)
 	}
 
@@ -143,7 +143,7 @@ func TestReserveRefusesAHoldUnderASecondWithoutCalling(t *testing.T) {
 	fake := &fakeCatalog{}
 	c := dialSpy(t, Config{Token: "s3cret"}, fake)
 
-	_, err := c.Reserve(context.Background(), "BK-1", 500*time.Millisecond, []int{1})
+	_, err := c.Reserve(context.Background(), "BK-1", 500*time.Millisecond, []string{"heidi-b1"})
 
 	if !errors.Is(err, ErrInvalidRequest) {
 		t.Fatalf("err = %v, want ErrInvalidRequest", err)
@@ -189,11 +189,14 @@ func TestReleaseAndSellSendTheirRequests(t *testing.T) {
 
 func TestUnavailableBooksBecomeAnUnavailableError(t *testing.T) {
 
+	// A slug that does not exist has no id (Reserve); an id that does not
+	// exist has no slug (Sell).
 	c := dialSpy(t, Config{Token: "s3cret"}, failing(unavailableStatus(t,
-		&catalogv1.Unavailable{Id: 3, Status: catalogv1.BookStatus_BOOK_STATUS_SOLD},
-		&catalogv1.Unavailable{Id: 5, Status: catalogv1.BookStatus_BOOK_STATUS_RESERVED},
+		&catalogv1.Unavailable{Id: 3, Slug: "heidi-b3", Status: catalogv1.BookStatus_BOOK_STATUS_SOLD},
+		&catalogv1.Unavailable{Id: 5, Slug: "kim-b5", Status: catalogv1.BookStatus_BOOK_STATUS_RESERVED},
+		&catalogv1.Unavailable{Slug: "no-such-book", Status: catalogv1.BookStatus_BOOK_STATUS_MISSING},
 		&catalogv1.Unavailable{Id: 8, Status: catalogv1.BookStatus_BOOK_STATUS_MISSING},
-		&catalogv1.Unavailable{Id: 9, Status: catalogv1.BookStatus_BOOK_STATUS_UNSPECIFIED},
+		&catalogv1.Unavailable{Id: 9, Slug: "emma-b9", Status: catalogv1.BookStatus_BOOK_STATUS_UNSPECIFIED},
 	)))
 
 	// Only Reserve and Sell can run into this, but the translation is shared.
@@ -207,7 +210,11 @@ func TestUnavailableBooksBecomeAnUnavailableError(t *testing.T) {
 			}
 
 			want := []Unavailable{
-				{3, StatusSold}, {5, StatusReserved}, {8, StatusMissing}, {9, StatusUnknown},
+				{ID: 3, Slug: "heidi-b3", Status: StatusSold},
+				{ID: 5, Slug: "kim-b5", Status: StatusReserved},
+				{Slug: "no-such-book", Status: StatusMissing},
+				{ID: 8, Status: StatusMissing},
+				{ID: 9, Slug: "emma-b9", Status: StatusUnknown},
 			}
 			if fmt.Sprint(got.Books) != fmt.Sprint(want) {
 				t.Fatalf("books = %v, want %v", got.Books, want)
@@ -225,7 +232,7 @@ func TestAFailedPreconditionWithoutDetailsIsStillUnavailable(t *testing.T) {
 
 	c := dialSpy(t, Config{Token: "s3cret"}, failing(status.Error(codes.FailedPrecondition, "books unavailable")))
 
-	_, err := c.Reserve(context.Background(), "BK-1", time.Minute, []int{1})
+	_, err := c.Reserve(context.Background(), "BK-1", time.Minute, []string{"heidi-b1"})
 
 	var got *UnavailableError
 	if !errors.As(err, &got) {
@@ -272,7 +279,7 @@ func TestTheOriginalErrorStaysInTheChain(t *testing.T) {
 
 	c := dialSpy(t, Config{Token: "s3cret"}, failing(status.Error(codes.Internal, "boom: table books is locked")))
 
-	_, err := c.Reserve(context.Background(), "BK-1", time.Minute, []int{1})
+	_, err := c.Reserve(context.Background(), "BK-1", time.Minute, []string{"heidi-b1"})
 
 	if !errors.Is(err, ErrCatalogUnavailable) {
 		t.Fatalf("err = %v", err)
@@ -297,7 +304,7 @@ func TestASlowCatalogIsUnavailable(t *testing.T) {
 	// Run aside so a missing deadline fails the test instead of hanging it.
 	done := make(chan error, 1)
 	go func() {
-		_, err := c.Reserve(context.Background(), "BK-1", time.Minute, []int{1})
+		_, err := c.Reserve(context.Background(), "BK-1", time.Minute, []string{"heidi-b1"})
 		done <- err
 	}()
 
@@ -340,7 +347,7 @@ func TestACallerThatGivesUpIsNotACatalogueFailure(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := c.Reserve(ctx, "BK-1", time.Minute, []int{1})
+	_, err := c.Reserve(ctx, "BK-1", time.Minute, []string{"heidi-b1"})
 
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)

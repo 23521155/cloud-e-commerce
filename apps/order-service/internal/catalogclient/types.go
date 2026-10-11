@@ -37,8 +37,13 @@ const (
 )
 
 // Unavailable is one book that stopped a request, and why.
+//
+// Reserve names books by slug and Sell by id; the other name is filled in
+// when the book exists. For a MISSING book only the name the caller used is
+// known: ID is 0 for a slug, Slug is "" for an id.
 type Unavailable struct {
 	ID     int
+	Slug   string
 	Status string
 }
 

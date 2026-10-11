@@ -84,7 +84,7 @@ type ReserveRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Holder        string                 `protobuf:"bytes,1,opt,name=holder,proto3" json:"holder,omitempty"`
 	TtlSeconds    int64                  `protobuf:"varint,2,opt,name=ttl_seconds,json=ttlSeconds,proto3" json:"ttl_seconds,omitempty"`
-	Ids           []int32                `protobuf:"varint,3,rep,packed,name=ids,proto3" json:"ids,omitempty"`
+	Slugs         []string               `protobuf:"bytes,4,rep,name=slugs,proto3" json:"slugs,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -133,9 +133,9 @@ func (x *ReserveRequest) GetTtlSeconds() int64 {
 	return 0
 }
 
-func (x *ReserveRequest) GetIds() []int32 {
+func (x *ReserveRequest) GetSlugs() []string {
 	if x != nil {
-		return x.Ids
+		return x.Slugs
 	}
 	return nil
 }
@@ -546,6 +546,7 @@ type Unavailable struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            int32                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
 	Status        BookStatus             `protobuf:"varint,2,opt,name=status,proto3,enum=catalog.v1.BookStatus" json:"status,omitempty"`
+	Slug          string                 `protobuf:"bytes,3,opt,name=slug,proto3" json:"slug,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -592,6 +593,13 @@ func (x *Unavailable) GetStatus() BookStatus {
 		return x.Status
 	}
 	return BookStatus_BOOK_STATUS_UNSPECIFIED
+}
+
+func (x *Unavailable) GetSlug() string {
+	if x != nil {
+		return x.Slug
+	}
+	return ""
 }
 
 // Attached to a FAILED_PRECONDITION error (status.WithDetails) when
@@ -645,12 +653,12 @@ var File_catalog_v1_reservation_proto protoreflect.FileDescriptor
 const file_catalog_v1_reservation_proto_rawDesc = "" +
 	"\n" +
 	"\x1ccatalog/v1/reservation.proto\x12\n" +
-	"catalog.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"[\n" +
+	"catalog.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"j\n" +
 	"\x0eReserveRequest\x12\x16\n" +
 	"\x06holder\x18\x01 \x01(\tR\x06holder\x12\x1f\n" +
 	"\vttl_seconds\x18\x02 \x01(\x03R\n" +
-	"ttlSeconds\x12\x10\n" +
-	"\x03ids\x18\x03 \x03(\x05R\x03ids\"\xb5\x01\n" +
+	"ttlSeconds\x12\x14\n" +
+	"\x05slugs\x18\x04 \x03(\tR\x05slugsJ\x04\b\x03\x10\x04R\x03ids\"\xb5\x01\n" +
 	"\x04Held\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x05R\x02id\x12\x12\n" +
 	"\x04slug\x18\x02 \x01(\tR\x04slug\x12\x14\n" +
@@ -675,10 +683,11 @@ const file_catalog_v1_reservation_proto_rawDesc = "" +
 	"\fSellResponse\"\x17\n" +
 	"\x15ReleaseExpiredRequest\"4\n" +
 	"\x16ReleaseExpiredResponse\x12\x1a\n" +
-	"\breleased\x18\x01 \x01(\x05R\breleased\"M\n" +
+	"\breleased\x18\x01 \x01(\x05R\breleased\"a\n" +
 	"\vUnavailable\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x05R\x02id\x12.\n" +
-	"\x06status\x18\x02 \x01(\x0e2\x16.catalog.v1.BookStatusR\x06status\"A\n" +
+	"\x06status\x18\x02 \x01(\x0e2\x16.catalog.v1.BookStatusR\x06status\x12\x12\n" +
+	"\x04slug\x18\x03 \x01(\tR\x04slug\"A\n" +
 	"\x10UnavailableBooks\x12-\n" +
 	"\x05books\x18\x01 \x03(\v2\x17.catalog.v1.UnavailableR\x05books*\x8d\x01\n" +
 	"\n" +
