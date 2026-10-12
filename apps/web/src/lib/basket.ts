@@ -1,5 +1,5 @@
 // Placeholder basket until a real one exists (session/DB). Every listing is a single copy.
-import { getBooks, queryBooks, type Book } from "@/lib/catalogue";
+import { getBooks, type Book } from "@/lib/catalogue";
 
 /** Most copies a basket holds: the same limit as one order in the order service. */
 export const MAX_BASKET = 20;
@@ -28,11 +28,4 @@ export async function getBasket(): Promise<BasketLine[]> {
 /** Sum of the copies that can still be bought, VND. */
 export function subtotal(lines: BasketLine[]): number {
   return lines.reduce((sum, l) => (l.sold ? sum : sum + l.book.price), 0);
-}
-
-/** Stand-in for the recommender: the newest books not already in the basket. */
-export async function suggestions(lines: BasketLine[], limit = 4): Promise<Book[]> {
-  const inBasket = new Set(lines.map((l) => l.book.slug));
-  const { books } = await queryBooks({ sort: "new" });
-  return books.filter((b) => !inBasket.has(b.slug)).slice(0, limit);
 }

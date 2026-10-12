@@ -3,8 +3,9 @@
 // Guest basket, kept in this browser's localStorage as a list of book slugs. Every listing is a
 // single copy, so a slug is either in the basket or not. Book details and prices are fetched
 // fresh (/api/books) wherever the basket is shown; the order service reads prices again anyway.
-import { useMemo, useSyncExternalStore } from "react";
-import { MAX_BASKET } from "@/lib/basket";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { MAX_BASKET, type BasketLine } from "@/lib/basket";
+import type { Book } from "@/lib/catalogue";
 
 const KEY = "basket";
 
@@ -58,6 +59,52 @@ export function useBasket(): string[] | null {
   // The raw string is the snapshot: it compares equal while the basket is unchanged
   const raw = useSyncExternalStore(subscribe, readRaw, () => null);
   return useMemo(() => (raw === null ? null : parse(raw)), [raw]);
+}
+
+/**
+ * The basket with its books, fetched from /api/books. lines is null while the basket or its
+ * books are still loading; failed is true when the books could not be fetched. Books already
+ * fetched are kept, so removing one shows at once instead of loading the basket again.
+ */
+export function useBasketLines(): { lines: BasketLine[] | null; failed: boolean } {
+  const slugs = useBasket();
+  // Book by slug; null for a slug the catalogue does not know
+  const [known, setKnown] = useState<Record<string, Book | null>>({});
+  const [failed, setFailed] = useState(false);
+
+  const missing = (slugs ?? []).filter((s) => !(s in known)).join(",");
+
+  useEffect(() => {
+    if (!missing) return;
+    let live = true;
+    fetch(`/api/books?slugs=${encodeURIComponent(missing)}`)
+      .then((res) => (res.ok ? (res.json() as Promise<Book[]>) : Promise.reject(new Error(String(res.status)))))
+      .then(
+        (books) => {
+          if (!live) return;
+          setKnown((prev) => {
+            const next = { ...prev };
+            for (const slug of missing.split(",")) next[slug] = null;
+            for (const book of books) next[book.slug] = book;
+            return next;
+          });
+          setFailed(false);
+        },
+        () => live && setFailed(true),
+      );
+    return () => {
+      live = false;
+    };
+  }, [missing]);
+
+  if (slugs === null || missing) return { lines: null, failed };
+  return {
+    lines: slugs.flatMap((slug) => {
+      const book = known[slug];
+      return book ? [{ book, sold: !book.available }] : [];
+    }),
+    failed: false,
+  };
 }
 
 export type AddResult = "added" | "already" | "full";
