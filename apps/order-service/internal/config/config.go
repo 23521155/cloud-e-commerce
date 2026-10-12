@@ -39,6 +39,29 @@ type Config struct {
 	// PaymentHold is how long the books of an online order stay reserved
 	// while the customer pays.
 	PaymentHold time.Duration
+
+	VNPay VNPay
+}
+
+// VNPay is the merchant account at VNPay. Online payments are off while
+// VNPAY_TMN_CODE and VNPAY_HASH_SECRET are both empty, so the service still
+// runs on a machine that has no sandbox account.
+type VNPay struct {
+	TmnCode    string
+	HashSecret string
+	PayURL     string
+
+	// ReturnURL is the web page VNPay sends the customer back to.
+	ReturnURL string
+
+	// ConfirmOnReturn lets the return redirect confirm a payment, not only
+	// the IPN call. Only for local runs, where VNPay cannot reach the IPN.
+	ConfirmOnReturn bool
+}
+
+// Enabled reports whether a VNPay account is configured.
+func (v VNPay) Enabled() bool {
+	return v.TmnCode != ""
 }
 
 // Load reads environment variables (via a .env file) into a Config.
@@ -60,6 +83,24 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	confirmOnReturn, err := getEnvBool("VNPAY_CONFIRM_ON_RETURN", false)
+	if err != nil {
+		return nil, err
+	}
+
+	vnpay := VNPay{
+		TmnCode:         os.Getenv("VNPAY_TMN_CODE"),
+		HashSecret:      os.Getenv("VNPAY_HASH_SECRET"),
+		PayURL:          getEnv("VNPAY_PAY_URL", "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html"),
+		ReturnURL:       getEnv("VNPAY_RETURN_URL", "http://localhost:3000/checkout/vnpay-return"),
+		ConfirmOnReturn: confirmOnReturn,
+	}
+
+	// One without the other is a half-copied account, not "VNPay off".
+	if (vnpay.TmnCode == "") != (vnpay.HashSecret == "") {
+		return nil, fmt.Errorf("VNPAY_TMN_CODE and VNPAY_HASH_SECRET must be set together")
+	}
+
 	cfg := &Config{
 		AppName: getEnv("APP_NAME", "order-service"),
 
@@ -74,6 +115,8 @@ func Load() (*Config, error) {
 		InternalToken: os.Getenv("INTERNAL_TOKEN"),
 
 		PaymentHold: time.Duration(holdMinutes) * time.Minute,
+
+		VNPay: vnpay,
 	}
 
 	return cfg, nil

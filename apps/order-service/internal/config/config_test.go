@@ -13,6 +13,8 @@ func clearEnv(t *testing.T) {
 	for _, key := range []string{
 		"APP_NAME", "PORT", "DATABASE_URL",
 		"CATALOG_GRPC_ADDR", "CATALOG_GRPC_TLS", "INTERNAL_TOKEN", "PAYMENT_HOLD_MINUTES",
+		"VNPAY_TMN_CODE", "VNPAY_HASH_SECRET", "VNPAY_PAY_URL", "VNPAY_RETURN_URL",
+		"VNPAY_CONFIRM_ON_RETURN",
 	} {
 		t.Setenv(key, "")
 	}
@@ -40,6 +42,49 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.PaymentHold != 15*time.Minute {
 		t.Errorf("PaymentHold = %v, want 15m", cfg.PaymentHold)
+	}
+	if cfg.VNPay.Enabled() {
+		t.Error("VNPay must be off without an account")
+	}
+	if cfg.VNPay.PayURL != "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html" {
+		t.Errorf("VNPay.PayURL = %q, want the sandbox", cfg.VNPay.PayURL)
+	}
+	if cfg.VNPay.ConfirmOnReturn {
+		t.Error("ConfirmOnReturn must be off by default: only the IPN confirms a payment")
+	}
+}
+
+func TestLoadReadsTheVNPaySettings(t *testing.T) {
+	clearEnv(t)
+
+	t.Setenv("VNPAY_TMN_CODE", "TESTTMN1")
+	t.Setenv("VNPAY_HASH_SECRET", "s3cret")
+	t.Setenv("VNPAY_RETURN_URL", "https://shop.example/checkout/vnpay-return")
+	t.Setenv("VNPAY_CONFIRM_ON_RETURN", "true")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	v := cfg.VNPay
+	if !v.Enabled() || v.TmnCode != "TESTTMN1" || v.HashSecret != "s3cret" ||
+		v.ReturnURL != "https://shop.example/checkout/vnpay-return" || !v.ConfirmOnReturn {
+		t.Errorf("VNPay = %+v", v)
+	}
+}
+
+func TestLoadRejectsHalfAVNPayAccount(t *testing.T) {
+
+	for _, key := range []string{"VNPAY_TMN_CODE", "VNPAY_HASH_SECRET"} {
+		t.Run(key, func(t *testing.T) {
+			clearEnv(t)
+			t.Setenv(key, "only-this")
+
+			if _, err := Load(); err == nil {
+				t.Fatalf("Load accepted %s without the other VNPay key", key)
+			}
+		})
 	}
 }
 
@@ -75,6 +120,7 @@ func TestLoadRejectsValuesItCannotUse(t *testing.T) {
 		{"hold is negative", "PAYMENT_HOLD_MINUTES", "-5"},
 		{"hold is longer than the catalogue allows", "PAYMENT_HOLD_MINUTES", "61"},
 		{"hold has a unit", "PAYMENT_HOLD_MINUTES", "15m"},
+		{"confirm on return typo", "VNPAY_CONFIRM_ON_RETURN", "yes"},
 	}
 
 	for _, tt := range tests {

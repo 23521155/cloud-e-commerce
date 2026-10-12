@@ -9,15 +9,18 @@ const (
 	StatusCancelled       = "CANCELLED"
 )
 
-// Payment methods (orders.payment_method). Only cash on delivery is handled
-// for now; online methods come with the payment gateway.
+// Payment methods (orders.payment_method). VietQR and card are paid through
+// VNPay; MoMo and PayPal are not handled yet.
 const (
-	PaymentCOD = "cod"
+	PaymentCOD    = "cod"
+	PaymentVietQR = "vietqr"
+	PaymentCard   = "card"
 )
 
 // Payment statuses (orders.payment_status).
 const (
 	PaymentUnpaid = "UNPAID"
+	PaymentPaid   = "PAID"
 )
 
 // Order is one orders row with its items. The db tags match the columns
@@ -39,8 +42,14 @@ type Order struct {
 	SubtotalVND    int64      `db:"subtotal_vnd"     json:"subtotalVnd"`
 	ShippingFeeVND *int64     `db:"shipping_fee_vnd" json:"shippingFeeVnd"`
 	ExpiresAt      *time.Time `db:"expires_at"       json:"expiresAt"`
+	PaymentRef     *string    `db:"payment_ref"      json:"-"`
+	PaidAt         *time.Time `db:"paid_at"          json:"paidAt"`
 	CreatedAt      time.Time  `db:"created_at"       json:"createdAt"`
 	Items          []Item     `db:"-"                json:"items"`
+
+	// PaymentURL is the gateway page an online order is paid on. It is
+	// signed for each answer, never stored.
+	PaymentURL string `db:"-" json:"paymentUrl,omitempty"`
 }
 
 // Item is a book as it was when the order was placed. book_id points to the

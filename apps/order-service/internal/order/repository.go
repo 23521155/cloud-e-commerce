@@ -21,6 +21,10 @@ var (
 	// ErrDuplicateCode means another order drew the same code between the
 	// check and the insert.
 	ErrDuplicateCode = errors.New("order code already used")
+
+	// ErrNotAwaitingPayment means the order is no longer AWAITING_PAYMENT:
+	// it was already paid or cancelled, possibly by a parallel request.
+	ErrNotAwaitingPayment = errors.New("order is not awaiting payment")
 )
 
 // SQL Server error numbers of a unique constraint and a unique index.
@@ -33,7 +37,7 @@ const (
 const orderColumns = `
 id, code, user_id, status, payment_method, payment_status,
 email, phone, full_name, address, city, postal_code, country,
-subtotal_vnd, shipping_fee_vnd, expires_at, created_at`
+subtotal_vnd, shipping_fee_vnd, expires_at, payment_ref, paid_at, created_at`
 
 type Repository struct {
 	db *sqlx.DB
@@ -56,11 +60,23 @@ func (r *Repository) CodeExists(ctx context.Context, code string) (bool, error) 
 // FindByIdempotencyKey returns the order placed with key, with its items,
 // or ErrNotFound. key must be a UUID.
 func (r *Repository) FindByIdempotencyKey(ctx context.Context, key string) (Order, error) {
+	return r.findOne(ctx, "idempotency_key", key)
+}
+
+// FindByCode returns the order with code, with its items, or ErrNotFound.
+func (r *Repository) FindByCode(ctx context.Context, code string) (Order, error) {
+	return r.findOne(ctx, "code", code)
+}
+
+// findOne returns the order whose column equals value, with its items, or
+// ErrNotFound. column must be a unique column named by this file, never
+// text from a request: it is put into the query as is.
+func (r *Repository) findOne(ctx context.Context, column string, value any) (Order, error) {
 
 	var o Order
 	err := r.db.GetContext(ctx, &o,
-		"SELECT "+orderColumns+" FROM orders WHERE idempotency_key = @key",
-		sql.Named("key", key))
+		"SELECT "+orderColumns+" FROM orders WHERE "+column+" = @value",
+		sql.Named("value", value))
 	if err == sql.ErrNoRows {
 		return Order{}, ErrNotFound
 	}
@@ -149,6 +165,61 @@ SET status = N'CANCELLED', cancel_reason = @reason, updated_at = SYSUTCDATETIME(
 WHERE id = @id`, sql.Named("id", id), sql.Named("reason", reason))
 
 	return err
+}
+
+// MarkPaid records that the gateway confirmed the payment of an
+// AWAITING_PAYMENT order: CONFIRMED, PAID, with ref and the time.
+// ErrNotAwaitingPayment when the order is no longer awaiting payment.
+//
+// The status is checked by the UPDATE itself, not by a SELECT before it: the
+// IPN call and the return redirect can arrive at the same moment, and SQL
+// Server runs the two UPDATEs one after the other, so only one finds the
+// order still awaiting payment.
+func (r *Repository) MarkPaid(ctx context.Context, id int64, ref string) error {
+
+	res, err := r.db.ExecContext(ctx, `
+UPDATE orders
+SET status = N'CONFIRMED', payment_status = N'PAID', payment_ref = @ref,
+    paid_at = SYSUTCDATETIME(), updated_at = SYSUTCDATETIME()
+WHERE id = @id AND status = N'AWAITING_PAYMENT'`,
+		sql.Named("id", id), sql.Named("ref", ref))
+	if err != nil {
+		return err
+	}
+
+	return oneRowOr(res, ErrNotAwaitingPayment)
+}
+
+// CancelAwaiting marks an AWAITING_PAYMENT order CANCELLED with reason: the
+// payment failed or its hold ran out. ErrNotAwaitingPayment when the order
+// is no longer awaiting payment; it is then left as it is. Unlike Cancel, it
+// never undoes a payment a parallel request has just confirmed.
+func (r *Repository) CancelAwaiting(ctx context.Context, id int64, reason string) error {
+
+	res, err := r.db.ExecContext(ctx, `
+UPDATE orders
+SET status = N'CANCELLED', cancel_reason = @reason, updated_at = SYSUTCDATETIME()
+WHERE id = @id AND status = N'AWAITING_PAYMENT'`,
+		sql.Named("id", id), sql.Named("reason", reason))
+	if err != nil {
+		return err
+	}
+
+	return oneRowOr(res, ErrNotAwaitingPayment)
+}
+
+// oneRowOr returns notFound when res changed no row.
+func oneRowOr(res sql.Result, notFound error) error {
+
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return notFound
+	}
+
+	return nil
 }
 
 // duplicateOr turns a unique violation on the idempotency key or the code

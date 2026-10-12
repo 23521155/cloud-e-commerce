@@ -8,7 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/fizzisme/order-service/internal/database"
 )
@@ -168,5 +170,172 @@ func TestCancel(t *testing.T) {
 	}
 	if got.Status != StatusCancelled {
 		t.Errorf("status = %q, want %q", got.Status, StatusCancelled)
+	}
+}
+
+// insertAwaiting writes an online order that waits for its payment.
+func insertAwaiting(t *testing.T, repo *Repository) *Order {
+	t.Helper()
+
+	o := newTestOrder(t, repo)
+	expires := time.Now().UTC().Add(15 * time.Minute)
+	o.Status = StatusAwaitingPayment
+	o.PaymentMethod = PaymentVietQR
+	o.ExpiresAt = &expires
+
+	if err := repo.Insert(context.Background(), newKey(), o); err != nil {
+		t.Fatal(err)
+	}
+
+	return o
+}
+
+func TestFindByCode(t *testing.T) {
+	repo := newTestRepo(t)
+	ctx := context.Background()
+
+	o := insertAwaiting(t, repo)
+
+	got, err := repo.FindByCode(ctx, o.Code)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != o.ID || got.Status != StatusAwaitingPayment || got.ExpiresAt == nil {
+		t.Errorf("got %+v, want the inserted order %+v", got, o)
+	}
+	if len(got.Items) != 2 || got.Items[0].Slug != "nha-gia-kim" {
+		t.Errorf("items = %+v, want the two inserted items in order", got.Items)
+	}
+	if got.PaymentRef != nil || got.PaidAt != nil {
+		t.Errorf("an unpaid order has payment_ref %v and paid_at %v", got.PaymentRef, got.PaidAt)
+	}
+}
+
+func TestFindByCodeNotFound(t *testing.T) {
+	repo := newTestRepo(t)
+
+	// Codes are upper case; this one cannot be drawn.
+	if _, err := repo.FindByCode(context.Background(), "no-such-code"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestMarkPaid(t *testing.T) {
+	repo := newTestRepo(t)
+	ctx := context.Background()
+
+	o := insertAwaiting(t, repo)
+
+	if err := repo.MarkPaid(ctx, o.ID, "14567890"); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := repo.FindByCode(ctx, o.Code)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != StatusConfirmed || got.PaymentStatus != PaymentPaid {
+		t.Errorf("status/payment = %q/%q, want %q/%q", got.Status, got.PaymentStatus, StatusConfirmed, PaymentPaid)
+	}
+	if got.PaymentRef == nil || *got.PaymentRef != "14567890" {
+		t.Errorf("payment_ref = %v, want 14567890", got.PaymentRef)
+	}
+	if got.PaidAt == nil {
+		t.Error("paid_at is not set")
+	}
+
+	// A second confirmation of the same payment finds nothing to do.
+	if err := repo.MarkPaid(ctx, o.ID, "14567890"); !errors.Is(err, ErrNotAwaitingPayment) {
+		t.Errorf("second MarkPaid: err = %v, want ErrNotAwaitingPayment", err)
+	}
+}
+
+func TestMarkPaidRefusesAnOrderThatWasNotAwaiting(t *testing.T) {
+	repo := newTestRepo(t)
+	ctx := context.Background()
+
+	// A cash-on-delivery order is CONFIRMED from the start.
+	o := newTestOrder(t, repo)
+	if err := repo.Insert(ctx, newKey(), o); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := repo.MarkPaid(ctx, o.ID, "14567890"); !errors.Is(err, ErrNotAwaitingPayment) {
+		t.Errorf("err = %v, want ErrNotAwaitingPayment", err)
+	}
+}
+
+// The IPN call and the return redirect may confirm the same payment at once:
+// exactly one of them must win.
+func TestMarkPaidOnlyOneOfParallelCallsWins(t *testing.T) {
+	repo := newTestRepo(t)
+	ctx := context.Background()
+
+	o := insertAwaiting(t, repo)
+
+	const calls = 8
+	errs := make([]error, calls)
+
+	var wg sync.WaitGroup
+	for i := range calls {
+		wg.Go(func() {
+			errs[i] = repo.MarkPaid(ctx, o.ID, "14567890")
+		})
+	}
+	wg.Wait()
+
+	won := 0
+	for _, err := range errs {
+		switch {
+		case err == nil:
+			won++
+		case !errors.Is(err, ErrNotAwaitingPayment):
+			t.Errorf("unexpected err = %v", err)
+		}
+	}
+	if won != 1 {
+		t.Errorf("%d calls won, want exactly 1", won)
+	}
+}
+
+func TestCancelAwaiting(t *testing.T) {
+	repo := newTestRepo(t)
+	ctx := context.Background()
+
+	o := insertAwaiting(t, repo)
+
+	if err := repo.CancelAwaiting(ctx, o.ID, "payment failed"); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := repo.FindByCode(ctx, o.Code)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != StatusCancelled || got.PaymentStatus != PaymentUnpaid {
+		t.Errorf("status/payment = %q/%q, want %q/%q", got.Status, got.PaymentStatus, StatusCancelled, PaymentUnpaid)
+	}
+}
+
+// A late failure must not undo a payment that a parallel request confirmed.
+func TestCancelAwaitingLeavesAPaidOrderAlone(t *testing.T) {
+	repo := newTestRepo(t)
+	ctx := context.Background()
+
+	o := insertAwaiting(t, repo)
+	if err := repo.MarkPaid(ctx, o.ID, "14567890"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := repo.CancelAwaiting(ctx, o.ID, "payment failed"); !errors.Is(err, ErrNotAwaitingPayment) {
+		t.Errorf("err = %v, want ErrNotAwaitingPayment", err)
+	}
+
+	got, err := repo.FindByCode(ctx, o.Code)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != StatusConfirmed || got.PaymentStatus != PaymentPaid {
+		t.Errorf("status/payment = %q/%q: the paid order was changed", got.Status, got.PaymentStatus)
 	}
 }

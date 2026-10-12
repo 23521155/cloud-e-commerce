@@ -14,6 +14,7 @@ import (
 	"github.com/fizzisme/order-service/internal/database"
 	"github.com/fizzisme/order-service/internal/logger"
 	"github.com/fizzisme/order-service/internal/order"
+	"github.com/fizzisme/order-service/internal/payment/vnpay"
 	"github.com/fizzisme/order-service/internal/router"
 	"go.uber.org/zap"
 )
@@ -70,12 +71,36 @@ func main() {
 	}
 	defer catalog.Close()
 
-	orders := order.NewHandler(
-		order.NewService(order.NewRepository(db), catalog, logger.Log),
-		logger.Log,
-	)
+	// Without a VNPay account the service still runs: online payment methods
+	// are refused and the payment routes are not mounted.
+	var payments order.Payments
+	var gateway *vnpay.Client
+	if cfg.VNPay.Enabled() {
+		gateway, err = vnpay.New(vnpay.Config{
+			TmnCode:    cfg.VNPay.TmnCode,
+			HashSecret: cfg.VNPay.HashSecret,
+			PayURL:     cfg.VNPay.PayURL,
+			ReturnURL:  cfg.VNPay.ReturnURL,
+		})
+		if err != nil {
+			logger.Log.Fatal(
+				"cannot create VNPay client",
+				zap.Error(err),
+			)
+		}
+		payments = gateway
+	} else {
+		logger.Log.Warn("VNPay is not configured, online payments are off")
+	}
 
-	r := router.SetupRouter(db, orders)
+	service := order.NewService(order.NewRepository(db), catalog, payments, cfg.PaymentHold, logger.Log)
+
+	routes := []router.Registrar{order.NewHandler(service, logger.Log)}
+	if gateway != nil {
+		routes = append(routes, order.NewPaymentHandler(service, gateway, cfg.VNPay.ConfirmOnReturn, logger.Log))
+	}
+
+	r := router.SetupRouter(db, routes...)
 
 	srv := &http.Server{
 		Addr:    ":" + cfg.Port,

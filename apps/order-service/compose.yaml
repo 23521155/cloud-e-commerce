@@ -75,6 +75,14 @@ services:
       # Same value as the catalogue; dev default only.
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-dev-internal-token}
       PAYMENT_HOLD_MINUTES: "15"
+      # VNPay sandbox account: put both in apps/order-service/.env (gitignored).
+      # Left empty, online payments are off.
+      VNPAY_TMN_CODE: ${VNPAY_TMN_CODE:-}
+      VNPAY_HASH_SECRET: ${VNPAY_HASH_SECRET:-}
+      VNPAY_RETURN_URL: ${VNPAY_RETURN_URL:-http://localhost:3000/checkout/vnpay-return}
+      # VNPay cannot reach the IPN URL of a local stack, so the return
+      # redirect records the payment. false wherever the IPN URL is public.
+      VNPAY_CONFIRM_ON_RETURN: ${VNPAY_CONFIRM_ON_RETURN:-true}
     ports:
       - "${ORDER_PORT:-8084}:8084"
     healthcheck:
