@@ -1,0 +1,173 @@
+package order
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"strings"
+
+	"github.com/jmoiron/sqlx"
+	mssql "github.com/microsoft/go-mssqldb"
+)
+
+var (
+	// ErrNotFound means no order matched.
+	ErrNotFound = errors.New("order not found")
+
+	// ErrDuplicateKey means an order with this idempotency key already
+	// exists: a repeated request got there first.
+	ErrDuplicateKey = errors.New("idempotency key already used")
+
+	// ErrDuplicateCode means another order drew the same code between the
+	// check and the insert.
+	ErrDuplicateCode = errors.New("order code already used")
+)
+
+// SQL Server error numbers of a unique constraint and a unique index.
+const (
+	sqlUniqueConstraint = 2627
+	sqlUniqueIndex      = 2601
+)
+
+// orderColumns are the columns read into an Order.
+const orderColumns = `
+id, code, user_id, status, payment_method, payment_status,
+email, phone, full_name, address, city, postal_code, country,
+subtotal_vnd, shipping_fee_vnd, expires_at, created_at`
+
+type Repository struct {
+	db *sqlx.DB
+}
+
+func NewRepository(db *sqlx.DB) *Repository {
+	return &Repository{db: db}
+}
+
+// CodeExists reports whether an order already uses code.
+func (r *Repository) CodeExists(ctx context.Context, code string) (bool, error) {
+
+	var n int
+	err := r.db.GetContext(ctx, &n,
+		"SELECT COUNT(*) FROM orders WHERE code = @code", sql.Named("code", code))
+
+	return n > 0, err
+}
+
+// FindByIdempotencyKey returns the order placed with key, with its items,
+// or ErrNotFound. key must be a UUID.
+func (r *Repository) FindByIdempotencyKey(ctx context.Context, key string) (Order, error) {
+
+	var o Order
+	err := r.db.GetContext(ctx, &o,
+		"SELECT "+orderColumns+" FROM orders WHERE idempotency_key = @key",
+		sql.Named("key", key))
+	if err == sql.ErrNoRows {
+		return Order{}, ErrNotFound
+	}
+	if err != nil {
+		return Order{}, err
+	}
+
+	o.Items = []Item{}
+	if err := r.db.SelectContext(ctx, &o.Items, `
+SELECT book_id, book_slug, title, author, cover_url, price_vnd
+FROM order_items WHERE order_id = @id ORDER BY id`, sql.Named("id", o.ID)); err != nil {
+		return Order{}, err
+	}
+
+	return o, nil
+}
+
+// Insert writes o and its items in one transaction, under the idempotency
+// key key, and fills in o.ID and o.CreatedAt. It returns ErrDuplicateKey or
+// ErrDuplicateCode when another order already has that key or code.
+func (r *Repository) Insert(ctx context.Context, key string, o *Order) error {
+
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() // a no-op once committed
+
+	row := tx.QueryRowxContext(ctx, `
+INSERT INTO orders (
+    code, idempotency_key, user_id, status, payment_method, payment_status,
+    email, phone, full_name, address, city, postal_code, country,
+    subtotal_vnd, shipping_fee_vnd, expires_at)
+OUTPUT inserted.id, inserted.created_at
+VALUES (
+    @code, @key, @user_id, @status, @payment_method, @payment_status,
+    @email, @phone, @full_name, @address, @city, @postal_code, @country,
+    @subtotal_vnd, @shipping_fee_vnd, @expires_at)`,
+		sql.Named("code", o.Code),
+		sql.Named("key", key),
+		sql.Named("user_id", o.UserID),
+		sql.Named("status", o.Status),
+		sql.Named("payment_method", o.PaymentMethod),
+		sql.Named("payment_status", o.PaymentStatus),
+		sql.Named("email", o.Email),
+		sql.Named("phone", o.Phone),
+		sql.Named("full_name", o.FullName),
+		sql.Named("address", o.Address),
+		sql.Named("city", o.City),
+		sql.Named("postal_code", o.PostalCode),
+		sql.Named("country", o.Country),
+		sql.Named("subtotal_vnd", o.SubtotalVND),
+		sql.Named("shipping_fee_vnd", o.ShippingFeeVND),
+		sql.Named("expires_at", o.ExpiresAt),
+	)
+	if err := row.Scan(&o.ID, &o.CreatedAt); err != nil {
+		return duplicateOr(err)
+	}
+
+	for _, it := range o.Items {
+		if _, err := tx.ExecContext(ctx, `
+INSERT INTO order_items (order_id, book_id, book_slug, title, author, cover_url, price_vnd)
+VALUES (@order_id, @book_id, @book_slug, @title, @author, @cover_url, @price_vnd)`,
+			sql.Named("order_id", o.ID),
+			sql.Named("book_id", it.BookID),
+			sql.Named("book_slug", it.Slug),
+			sql.Named("title", it.Title),
+			sql.Named("author", it.Author),
+			sql.Named("cover_url", it.CoverURL),
+			sql.Named("price_vnd", it.PriceVND),
+		); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+// Cancel marks an order CANCELLED with reason. Cancelling it again only
+// rewrites the reason.
+func (r *Repository) Cancel(ctx context.Context, id int64, reason string) error {
+
+	_, err := r.db.ExecContext(ctx, `
+UPDATE orders
+SET status = N'CANCELLED', cancel_reason = @reason, updated_at = SYSUTCDATETIME()
+WHERE id = @id`, sql.Named("id", id), sql.Named("reason", reason))
+
+	return err
+}
+
+// duplicateOr turns a unique violation on the idempotency key or the code
+// into ErrDuplicateKey or ErrDuplicateCode, and returns any other err as is.
+func duplicateOr(err error) error {
+
+	var sqlErr mssql.Error
+	if !errors.As(err, &sqlErr) ||
+		(sqlErr.Number != sqlUniqueConstraint && sqlErr.Number != sqlUniqueIndex) {
+		return err
+	}
+
+	// The message names the constraint that was violated.
+	switch {
+	case strings.Contains(sqlErr.Message, "uq_orders_idempotency_key"):
+		return ErrDuplicateKey
+	case strings.Contains(sqlErr.Message, "uq_orders_code"):
+		return ErrDuplicateCode
+	}
+
+	return err
+}

@@ -9,9 +9,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/fizzisme/order-service/internal/catalogclient"
 	"github.com/fizzisme/order-service/internal/config"
 	"github.com/fizzisme/order-service/internal/database"
 	"github.com/fizzisme/order-service/internal/logger"
+	"github.com/fizzisme/order-service/internal/order"
 	"github.com/fizzisme/order-service/internal/router"
 	"go.uber.org/zap"
 )
@@ -53,7 +55,27 @@ func main() {
 		zap.String("port", cfg.Port),
 	)
 
-	r := router.SetupRouter(db)
+	// The connection is lazy, so the service starts even when the catalogue
+	// is not up yet; a missing token, though, stops it here.
+	catalog, err := catalogclient.New(catalogclient.Config{
+		Addr:   cfg.CatalogGRPCAddr,
+		Token:  cfg.InternalToken,
+		UseTLS: cfg.CatalogGRPCTLS,
+	})
+	if err != nil {
+		logger.Log.Fatal(
+			"cannot create catalogue client",
+			zap.Error(err),
+		)
+	}
+	defer catalog.Close()
+
+	orders := order.NewHandler(
+		order.NewService(order.NewRepository(db), catalog, logger.Log),
+		logger.Log,
+	)
+
+	r := router.SetupRouter(db, orders)
 
 	srv := &http.Server{
 		Addr:    ":" + cfg.Port,
