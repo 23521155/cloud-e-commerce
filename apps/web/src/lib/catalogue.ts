@@ -1,5 +1,6 @@
 // Catalogue client for catalog-service, reached through the API gateway.
-// Server-side only: CATALOG_API_URL is read on the server and never sent to the browser.
+// Server-side only: the gateway URL is read on the server and never sent to the browser.
+import { GATEWAY_URL } from "@/lib/gateway";
 
 export type Book = {
   slug: string;
@@ -18,6 +19,16 @@ export type Book = {
   rare: boolean;
   /** Real cover scan, when we have one */
   image?: string;
+  /** Still for sale; false once reserved or sold */
+  available: boolean;
+  /** RESERVED while another reader is checking it out */
+  status: "AVAILABLE" | "RESERVED" | "SOLD";
+};
+
+/** How an unavailable copy is labelled on the shelves and its page. */
+export const UNAVAILABLE_LABEL: Record<Exclude<Book["status"], "AVAILABLE">, string> = {
+  RESERVED: "On hold",
+  SOLD: "Sold",
 };
 
 export type Subject = { slug: string; name: string; bookCount: number };
@@ -31,7 +42,7 @@ export const SORTS = [
 
 export type SortKey = (typeof SORTS)[number]["key"];
 
-const BASE = (process.env.CATALOG_API_URL ?? "http://localhost:8080/api/catalog").replace(/\/$/, "");
+const BASE = `${GATEWAY_URL}/api/catalog`;
 
 /** The slugs the API accepts in one /books?slugs= request. */
 const MAX_BATCH = 50;
@@ -50,6 +61,7 @@ type ApiBook = {
   priceVnd: number;
   coverUrl: string | null;
   rare: boolean;
+  status: "AVAILABLE" | "RESERVED" | "SOLD";
   subjectSlug: string;
   subjectName: string;
 };
@@ -76,6 +88,8 @@ function toBook(b: ApiBook): Book {
     subjectName: b.subjectName,
     rare: b.rare,
     image: b.coverUrl ?? undefined,
+    available: b.status === "AVAILABLE",
+    status: b.status,
   };
 }
 

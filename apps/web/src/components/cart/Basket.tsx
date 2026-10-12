@@ -10,7 +10,7 @@ const day = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", y
 /** The fan never shows more than this many covers; the rest are counted in a tag. */
 const FAN_MAX = 7;
 /** The card always draws at least this many ruled lines, like a fresh library card. */
-const CARD_ROWS = 6;
+export const CARD_ROWS = 6;
 
 const copies = (n: number) => `${n} ${n === 1 ? "copy" : "copies"}`;
 
@@ -64,7 +64,7 @@ export function Seal() {
   );
 }
 
-export function Basket({ lines, total }: { lines: BasketLine[]; total: number }) {
+export function Basket({ lines, total, onRemove }: { lines: BasketLine[]; total: number; onRemove: (slug: string) => void }) {
   const live = lines.filter((l) => !l.sold).length;
   const blanks = Math.max(0, CARD_ROWS - lines.length);
 
@@ -128,7 +128,7 @@ export function Basket({ lines, total }: { lines: BasketLine[]; total: number })
                     <td className="lib-card__col-binding">{book.condition}</td>
                     <td className="lib-card__price">
                       <span className="lib-card__amount">{price.format(book.price)}</span>
-                      <button type="button" className="basket__remove small-upper under-hover" aria-label={`Remove ${book.title} from basket`}>
+                      <button type="button" className="basket__remove small-upper under-hover" aria-label={`Remove ${book.title} from basket`} onClick={() => onRemove(book.slug)}>
                         Remove
                       </button>
                     </td>

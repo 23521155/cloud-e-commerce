@@ -1,7 +1,64 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { createContext, startTransition, useActionState, useContext, useEffect, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
+import type { CheckoutState } from "@/app/(shop)/checkout/actions";
+
+/** True while CheckoutForm is placing the order. */
+const PlacingContext = createContext(false);
+
+/**
+ * The order form. Submitted from onSubmit rather than through the form's action: React resets
+ * a form once its action has run, and an order that was refused must keep what the reader typed.
+ * The action stays on the form so it still posts before the page has hydrated.
+ */
+export function CheckoutForm({
+  action,
+  titles,
+  className,
+  children,
+}: {
+  action: (state: CheckoutState, formData: FormData) => Promise<CheckoutState>;
+  /** Title by slug, to name the copies an order was refused for. */
+  titles: Record<string, string>;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const [state, formAction, pending] = useActionState(action, {});
+  // One idempotency key per checkout: placing the order twice returns the first order
+  const key = useRef<string | null>(null);
+  const alert = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (state.error) alert.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [state]);
+
+  const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const data = new FormData(e.currentTarget);
+    key.current ??= crypto.randomUUID();
+    data.set("idempotencyKey", key.current);
+    startTransition(() => formAction(data));
+  };
+
+  return (
+    <form action={formAction} onSubmit={onSubmit} className={className}>
+      {state.error && (
+        <div ref={alert} role="alert" className="mx-auto w-full max-w-[760px] border border-dashed border-oxblood-700 px-6 py-5 text-parchment-200">
+          <p className="m-0">{state.error}</p>
+          {state.unavailable && (
+            <ul className="m-0 mt-3 pl-5 italic">
+              {state.unavailable.map((slug) => (
+                <li key={slug}>{titles[slug] ?? slug}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+      <PlacingContext value={pending}>{children}</PlacingContext>
+    </form>
+  );
+}
 
 const groupDigits = (v: string, max: number) =>
   v
@@ -81,7 +138,9 @@ export function CardFields() {
 
 /** Submit button for the order form; shows progress while the server action runs. */
 export function PlaceOrderButton({ className = "" }: { className?: string }) {
-  const { pending } = useFormStatus();
+  // useFormStatus covers the post before hydration; CheckoutForm submits without it afterwards
+  const placing = useContext(PlacingContext);
+  const pending = useFormStatus().pending || placing;
   return (
     <button type="submit" className={`dot-btn dot-btn--solid co__submit ${className}`.trim()} disabled={pending} aria-disabled={pending}>
       {pending ? "Placing order…" : "Place order"}

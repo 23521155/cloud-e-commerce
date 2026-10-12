@@ -42,8 +42,11 @@ func (r *Repository) GetBySlug(ctx context.Context, slug string) (Book, error) {
 	return b, err
 }
 
+// buildWhere filters the listing. Books of every status are listed: the shop
+// shows sold and reserved copies too, marked as such (each book carries its
+// status).
 func buildWhere(f Filter) (string, []any) {
-	where := []string{"b.status = N'AVAILABLE'"}
+	var where []string
 	var args []any
 
 	if f.Subject != "" {
@@ -57,6 +60,9 @@ func buildWhere(f Filter) (string, []any) {
 		name := fmt.Sprintf("q%d", i)
 		where = append(where, "b.search_text LIKE @"+name+` ESCAPE '\'`)
 		args = append(args, sql.Named(name, "%"+escapeLike(term)+"%"))
+	}
+	if len(where) == 0 {
+		return "", args
 	}
 	return " WHERE " + strings.Join(where, " AND "), args
 }
@@ -79,7 +85,8 @@ var orderBy = map[string]string{
 	"year":       "b.year ASC, b.id DESC",
 }
 
-// List returns one page of available books and the total number of matches.
+// List returns one page of books, whatever their status, and the total number
+// of matches.
 func (r *Repository) List(ctx context.Context, f Filter) ([]Book, int, error) {
 
 	where, args := buildWhere(f)
