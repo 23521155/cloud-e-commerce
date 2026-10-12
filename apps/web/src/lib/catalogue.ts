@@ -19,6 +19,8 @@ export type Book = {
   rare: boolean;
   /** Real cover scan, when we have one */
   image?: string;
+  /** Still for sale; false once reserved or sold (only books asked for by slug can be unavailable) */
+  available: boolean;
 };
 
 export type Subject = { slug: string; name: string; bookCount: number };
@@ -51,6 +53,7 @@ type ApiBook = {
   priceVnd: number;
   coverUrl: string | null;
   rare: boolean;
+  status: "AVAILABLE" | "RESERVED" | "SOLD";
   subjectSlug: string;
   subjectName: string;
 };
@@ -77,6 +80,7 @@ function toBook(b: ApiBook): Book {
     subjectName: b.subjectName,
     rare: b.rare,
     image: b.coverUrl ?? undefined,
+    available: b.status === "AVAILABLE",
   };
 }
 

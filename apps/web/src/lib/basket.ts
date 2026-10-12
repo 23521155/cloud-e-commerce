@@ -1,6 +1,9 @@
 // Placeholder basket until a real one exists (session/DB). Every listing is a single copy.
 import { getBooks, queryBooks, type Book } from "@/lib/catalogue";
 
+/** Most copies a basket holds: the same limit as one order in the order service. */
+export const MAX_BASKET = 20;
+
 export type BasketLine = {
   book: Book;
   /** Another reader bought this copy after it was added; it is not charged. */
