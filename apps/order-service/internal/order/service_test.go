@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/fizzisme/order-service/internal/catalogclient"
+	"github.com/fizzisme/order-service/internal/payment/vnpay"
 	"go.uber.org/zap"
 )
 
@@ -99,9 +100,11 @@ type fakeStore struct {
 	codeExistsErr error
 	insertErr     error
 	cancelErr     error
+	markPaidErr   error
 
 	inserted  []*Order
 	cancelled map[int64]string // id -> reason
+	paid      map[int64]string // id -> payment ref
 	nextID    int64
 }
 
@@ -110,6 +113,7 @@ func newFakeStore() *fakeStore {
 		orders:     map[string]*Order{},
 		takenCodes: map[string]bool{},
 		cancelled:  map[int64]string{},
+		paid:       map[int64]string{},
 	}
 }
 
@@ -144,6 +148,71 @@ func (f *fakeStore) Insert(ctx context.Context, key string, o *Order) error {
 func (f *fakeStore) Cancel(ctx context.Context, id int64, reason string) error {
 	f.cancelled[id] = reason
 	return f.cancelErr
+}
+
+func (f *fakeStore) FindByCode(ctx context.Context, code string) (Order, error) {
+	for _, o := range f.orders {
+		if o.Code == code {
+			return *o, nil
+		}
+	}
+	return Order{}, ErrNotFound
+}
+
+// byID is the stored order with id, or nil.
+func (f *fakeStore) byID(id int64) *Order {
+	for _, o := range f.orders {
+		if o.ID == id {
+			return o
+		}
+	}
+	return nil
+}
+
+// MarkPaid and CancelAwaiting change only an AWAITING_PAYMENT order, as the
+// real UPDATEs do.
+func (f *fakeStore) MarkPaid(ctx context.Context, id int64, ref string) error {
+	if f.markPaidErr != nil {
+		return f.markPaidErr
+	}
+
+	o := f.byID(id)
+	if o == nil || o.Status != StatusAwaitingPayment {
+		return ErrNotAwaitingPayment
+	}
+
+	now := time.Now()
+	o.Status, o.PaymentStatus, o.PaymentRef, o.PaidAt = StatusConfirmed, PaymentPaid, &ref, &now
+	f.paid[id] = ref
+
+	return nil
+}
+
+func (f *fakeStore) CancelAwaiting(ctx context.Context, id int64, reason string) error {
+	o := f.byID(id)
+	if o == nil || o.Status != StatusAwaitingPayment {
+		return ErrNotAwaitingPayment
+	}
+
+	o.Status = StatusCancelled
+	f.cancelled[id] = reason
+
+	return nil
+}
+
+// fakePayments signs nothing: the URL only names the order, and every
+// request is recorded.
+type fakePayments struct {
+	err      error
+	requests []vnpay.PayRequest
+}
+
+func (f *fakePayments) BuildPayURL(r vnpay.PayRequest) (string, error) {
+	f.requests = append(f.requests, r)
+	if f.err != nil {
+		return "", f.err
+	}
+	return "https://pay.example/?ref=" + r.TxnRef, nil
 }
 
 // fakeCatalog is a Reserver that answers from fields set by the test and
@@ -193,8 +262,11 @@ func (f *fakeCatalog) Sell(ctx context.Context, holder string, ids []int) error 
 	return f.sellErr
 }
 
+// testHold is the payment hold of the test service.
+const testHold = 15 * time.Minute
+
 func newTestService(store Store, catalog *fakeCatalog) *Service {
-	return NewService(store, catalog, zap.NewNop())
+	return NewService(store, catalog, &fakePayments{}, testHold, zap.NewNop())
 }
 
 func TestCreateCOD(t *testing.T) {

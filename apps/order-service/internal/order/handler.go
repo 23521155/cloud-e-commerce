@@ -87,6 +87,7 @@ func (h *Handler) create(c *gin.Context) {
 		City:          req.City,
 		PostalCode:    req.PostalCode,
 		Country:       req.Country,
+		ClientIP:      c.ClientIP(),
 	})
 	if err != nil {
 		h.fail(c, err)
