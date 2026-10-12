@@ -210,7 +210,11 @@ const Terms = () => <p className="co__terms m-0">Shipping is not included in thi
 /** One step at a time: contact, delivery, then payment with the order card. */
 export function Checkout({ lines, total, action }: CheckoutProps) {
   return (
-    <CheckoutForm action={action} className="co co--steps">
+    <CheckoutForm action={action} titles={Object.fromEntries(lines.map((l) => [l.book.slug, l.book.title]))} className="co co--steps">
+      {/* The basket is in the browser, so its copies travel with the form */}
+      {lines.map(({ book }) => (
+        <input key={book.slug} type="hidden" name="slug" value={book.slug} />
+      ))}
       <Stepper
         steps={[
           { key: "contact", label: "Contact", content: <ContactCard /> },

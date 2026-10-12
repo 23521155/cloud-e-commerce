@@ -1,5 +1,6 @@
-// Placeholder basket until a real one exists (session/DB). Every listing is a single copy.
-import { getBooks, type Book } from "@/lib/catalogue";
+// Shared basket types and helpers, for server and browser alike. The guest basket itself lives in
+// the browser's localStorage (see basket-store.ts). Every listing is a single copy.
+import type { Book } from "@/lib/catalogue";
 
 /** Most copies a basket holds: the same limit as one order in the order service. */
 export const MAX_BASKET = 20;
@@ -9,21 +10,6 @@ export type BasketLine = {
   /** Another reader bought this copy after it was added; it is not charged. */
   sold: boolean;
 };
-
-const MOCK: { slug: string; sold?: boolean }[] = [
-  { slug: "pride-and-prejudice-b0006aqlwu" },
-  { slug: "jamaica-inn-b0000ef83i" },
-  { slug: "lost-horizon-b0006dlxji", sold: true },
-  { slug: "heidi-b00087e21s" },
-];
-
-export async function getBasket(): Promise<BasketLine[]> {
-  const books = new Map((await getBooks(MOCK.map((m) => m.slug))).map((b) => [b.slug, b]));
-  return MOCK.flatMap(({ slug, sold = false }) => {
-    const book = books.get(slug);
-    return book ? [{ book, sold }] : [];
-  });
-}
 
 /** Sum of the copies that can still be bought, VND. */
 export function subtotal(lines: BasketLine[]): number {

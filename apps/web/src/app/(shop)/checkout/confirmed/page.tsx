@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { ClearBasket } from "@/components/basket/ClearBasket";
 import { DotButton } from "@/components/ui/DotButton";
 import { getPaymentMethod } from "@/lib/payment";
 
@@ -34,6 +35,8 @@ export default async function ConfirmedPage({ searchParams }: PageProps<"/checko
         )}
         {placed ? (
           <>
+            {/* The copies are ordered, so they leave the basket */}
+            <ClearBasket />
             <p className="m-0 mt-8 font-serif text-[clamp(1.6rem,3vw,2.6rem)] tabular-nums">Order {code}</p>
             <p className="m-0 mt-4 max-w-[44ch] text-[clamp(17px,1.3vw,21px)] leading-relaxed text-parchment-200">
               Keep this number with the email you gave: you will need both to ask about your order.

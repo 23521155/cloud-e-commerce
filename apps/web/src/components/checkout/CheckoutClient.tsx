@@ -14,10 +14,13 @@ const PlacingContext = createContext(false);
  */
 export function CheckoutForm({
   action,
+  titles,
   className,
   children,
 }: {
   action: (state: CheckoutState, formData: FormData) => Promise<CheckoutState>;
+  /** Title by slug, to name the copies an order was refused for. */
+  titles: Record<string, string>;
   className?: string;
   children: React.ReactNode;
 }) {
@@ -45,8 +48,8 @@ export function CheckoutForm({
           <p className="m-0">{state.error}</p>
           {state.unavailable && (
             <ul className="m-0 mt-3 pl-5 italic">
-              {state.unavailable.map((title) => (
-                <li key={title}>{title}</li>
+              {state.unavailable.map((slug) => (
+                <li key={slug}>{titles[slug] ?? slug}</li>
               ))}
             </ul>
           )}

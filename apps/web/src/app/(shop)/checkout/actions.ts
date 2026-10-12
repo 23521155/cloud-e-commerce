@@ -1,14 +1,14 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { getBasket } from "@/lib/basket";
+import { MAX_BASKET } from "@/lib/basket";
 import { placeOrder as submitOrder } from "@/lib/order-api";
 import { getPaymentMethod } from "@/lib/payment";
 
 /** What the checkout form shows after a refused order. Empty while nothing went wrong. */
 export type CheckoutState = {
   error?: string;
-  /** Titles of the copies someone else bought first. */
+  /** Slugs of the copies someone else bought first; the form shows their titles. */
   unavailable?: string[];
 };
 
@@ -25,15 +25,17 @@ export async function placeOrder(_prev: CheckoutState, formData: FormData): Prom
     redirect(method.flow === "gateway" ? `/checkout/pay?method=${method.id}` : `/checkout/confirmed?method=${method.id}`);
   }
 
-  // The copies come from the basket on the server, never from the form
-  const lines = (await getBasket()).filter((l) => !l.sold);
-  if (lines.length === 0) return { error: "Your basket has no copies that can still be bought." };
+  // The basket lives in the browser, so its slugs come with the form. Only the slugs: the order
+  // service reads every price and checks every copy itself.
+  const slugs = [...new Set(formData.getAll("slug").map(String))];
+  if (slugs.length === 0) return { error: "Your basket has no copies that can still be bought." };
+  if (slugs.length > MAX_BASKET) return { error: `One order holds ${MAX_BASKET} copies at most.` };
 
   const postal = text(formData, "postal");
   // CheckoutForm adds the key; a form posted before the page hydrated has none
   const key = text(formData, "idempotencyKey") || crypto.randomUUID();
   const result = await submitOrder(key, {
-    slugs: lines.map((l) => l.book.slug),
+    slugs,
     paymentMethod: "cod",
     email: text(formData, "email"),
     phone: text(formData, "phone"),
@@ -47,13 +49,8 @@ export async function placeOrder(_prev: CheckoutState, formData: FormData): Prom
   if (result.ok) redirect(`/checkout/confirmed?method=cod&code=${encodeURIComponent(result.order.code)}`);
 
   switch (result.reason) {
-    case "unavailable": {
-      const titles = new Map(lines.map((l) => [l.book.slug, l.book.title]));
-      return {
-        error: "Another reader bought these copies a moment ago, so nothing was ordered:",
-        unavailable: result.slugs.map((slug) => titles.get(slug) ?? slug),
-      };
-    }
+    case "unavailable":
+      return { error: "Another reader bought these copies a moment ago, so nothing was ordered:", unavailable: result.slugs };
     case "invalid":
       return { error: `Please check your details: ${result.message}.` };
     default:
