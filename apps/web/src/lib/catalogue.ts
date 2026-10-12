@@ -1,5 +1,6 @@
 // Catalogue client for catalog-service, reached through the API gateway.
-// Server-side only: CATALOG_API_URL is read on the server and never sent to the browser.
+// Server-side only: the gateway URL is read on the server and never sent to the browser.
+import { GATEWAY_URL } from "@/lib/gateway";
 
 export type Book = {
   slug: string;
@@ -31,7 +32,7 @@ export const SORTS = [
 
 export type SortKey = (typeof SORTS)[number]["key"];
 
-const BASE = (process.env.CATALOG_API_URL ?? "http://localhost:8080/api/catalog").replace(/\/$/, "");
+const BASE = `${GATEWAY_URL}/api/catalog`;
 
 /** The slugs the API accepts in one /books?slugs= request. */
 const MAX_BATCH = 50;
