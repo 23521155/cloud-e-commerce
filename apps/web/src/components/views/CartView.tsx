@@ -25,7 +25,8 @@ export function CartView({ shelf }: { shelf: Book[] }) {
   const { lines, failed } = useBasketLines();
 
   const inBasket = new Set(slugs ?? []);
-  const more = shelf.filter((b) => !inBasket.has(b.slug)).slice(0, SUGGESTIONS);
+  // The shelves list sold copies too; only ones that can still be bought are suggested
+  const more = shelf.filter((b) => b.available && !inBasket.has(b.slug)).slice(0, SUGGESTIONS);
 
   return (
     <>
