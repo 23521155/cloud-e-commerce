@@ -15,7 +15,7 @@ const ORDER_CODE = /^MA-\d{6}$/;
 export default async function ConfirmedPage({ searchParams }: PageProps<"/checkout/confirmed">) {
   const params = await searchParams;
   const method = getPaymentMethod(first(params.method));
-  // Only cash on delivery places a real order so far; it arrives with its code
+  // Real orders (cash on delivery, or paid on VNPay) arrive with their code; the mocked methods have none
   const code = first(params.code);
   const placed = code !== undefined && ORDER_CODE.test(code);
 

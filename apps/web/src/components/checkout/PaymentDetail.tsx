@@ -1,4 +1,3 @@
-import { CardFields } from "@/components/checkout/CheckoutClient";
 import type { PaymentMethodId } from "@/lib/payment";
 
 const price = new Intl.NumberFormat("en-US", { style: "currency", currency: "VND", maximumFractionDigits: 0 });
@@ -41,7 +40,7 @@ export function PaymentDetail({ method, total }: { method: PaymentMethodId; tota
       return (
         <div className="co-detail">
           <p className="co-detail__title">Pay by bank transfer</p>
-          <p className="co-detail__text">After you place the order, the payment page opens with a VietQR code for {amount}. Scan it with any Vietnamese banking app to pay.</p>
+          <p className="co-detail__text">After you place the order, VNPay’s payment page opens for {amount}. Scan its QR code with any Vietnamese banking app, or pick your bank there.</p>
         </div>
       );
     case "momo":
@@ -59,10 +58,11 @@ export function PaymentDetail({ method, total }: { method: PaymentMethodId; tota
         </div>
       );
     case "card":
+      // The card number is typed on VNPay's page only; it never reaches this site.
       return (
         <div className="co-detail">
-          <p className="co-detail__title">Card details · {amount}</p>
-          <CardFields />
+          <p className="co-detail__title">Pay by card</p>
+          <p className="co-detail__text">After you place the order, VNPay’s secure page opens for {amount}. Enter your card there; your copies are held for you while you pay.</p>
         </div>
       );
     case "paypal":

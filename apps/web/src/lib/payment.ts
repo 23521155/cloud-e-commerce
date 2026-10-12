@@ -1,5 +1,5 @@
-// Payment methods offered at checkout. Mock only: no gateway is wired yet.
-// The `id` is the value the order form submits; map it to a gateway when one is integrated.
+// Payment methods offered at checkout. VietQR and card are paid on VNPay's page; MoMo and PayPal
+// are still mocked by /checkout/pay. The `id` is the value the order form submits.
 export type PaymentMethodId = "vietqr" | "momo" | "cod" | "card" | "paypal";
 
 export type PaymentMethod = {
@@ -22,6 +22,8 @@ export const PAYMENT_GROUPS: { label: string; currency: string; methods: Payment
     methods: [
       { id: "vietqr", name: "Bank transfer (VietQR)", note: "Scan a QR code with any banking app.", icon: "qr", flow: "gateway" },
       { id: "momo", name: "MoMo", note: "Pay in the MoMo e-wallet app.", icon: "wallet", flow: "gateway" },
+      // VNPay charges in dong, so the card is paid in VND too.
+      { id: "card", name: "Card", note: "Visa, Mastercard, JCB or a domestic ATM card.", icon: "card", flow: "gateway" },
       { id: "cod", name: "Cash on delivery", note: "Pay the courier when the parcel arrives.", icon: "parcel", flow: "offline" },
     ],
   },
@@ -29,7 +31,6 @@ export const PAYMENT_GROUPS: { label: string; currency: string; methods: Payment
     label: "From anywhere",
     currency: "USD",
     methods: [
-      { id: "card", name: "Card", note: "Visa, Mastercard or JCB.", icon: "card", flow: "onsite" },
       { id: "paypal", name: "PayPal", note: "Pay from your PayPal account.", icon: "globe", flow: "gateway" },
     ],
   },
