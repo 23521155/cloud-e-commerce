@@ -82,6 +82,7 @@ type Store interface {
 	FindByCode(ctx context.Context, code string) (Order, error)
 	MarkPaid(ctx context.Context, id int64, ref string) error
 	CancelAwaiting(ctx context.Context, id int64, reason string) error
+	ListExpiredAwaiting(ctx context.Context, limit int) ([]Order, error)
 }
 
 // Payments is what the service needs from the payment gateway. The real one

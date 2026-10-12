@@ -5,6 +5,7 @@ package order
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -314,6 +315,56 @@ func TestCancelAwaiting(t *testing.T) {
 	}
 	if got.Status != StatusCancelled || got.PaymentStatus != PaymentUnpaid {
 		t.Errorf("status/payment = %q/%q, want %q/%q", got.Status, got.PaymentStatus, StatusCancelled, PaymentUnpaid)
+	}
+}
+
+func TestListExpiredAwaiting(t *testing.T) {
+	repo := newTestRepo(t)
+	ctx := context.Background()
+
+	ended := insertAwaiting(t, repo)
+	if _, err := repo.db.ExecContext(ctx,
+		"UPDATE orders SET expires_at = DATEADD(MINUTE, -1, SYSUTCDATETIME()) WHERE id = @id",
+		sql.Named("id", ended.ID)); err != nil {
+		t.Fatal(err)
+	}
+	onHold := insertAwaiting(t, repo)
+
+	// Other tests leave expired orders behind, so look for ours among many.
+	orders, err := repo.ListExpiredAwaiting(ctx, 10000)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var found *Order
+	for i := range orders {
+		switch orders[i].ID {
+		case ended.ID:
+			found = &orders[i]
+		case onHold.ID:
+			t.Error("an order still on hold was listed")
+		}
+		if orders[i].Status != StatusAwaitingPayment {
+			t.Errorf("order %s is %s, want only AWAITING_PAYMENT", orders[i].Code, orders[i].Status)
+		}
+	}
+	if found == nil {
+		t.Fatal("the order whose hold ended was not listed")
+	}
+	if len(found.Items) != 2 || found.Items[0].BookID != 1 {
+		t.Errorf("items = %+v, want the two inserted items", found.Items)
+	}
+}
+
+func TestListExpiredAwaitingHonoursTheLimit(t *testing.T) {
+	repo := newTestRepo(t)
+
+	orders, err := repo.ListExpiredAwaiting(context.Background(), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(orders) > 1 {
+		t.Errorf("%d orders, want at most 1", len(orders))
 	}
 }
 

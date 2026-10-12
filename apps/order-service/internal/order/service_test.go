@@ -102,6 +102,8 @@ type fakeStore struct {
 	cancelErr     error
 	markPaidErr   error
 
+	listExpiredErr error
+
 	inserted  []*Order
 	cancelled map[int64]string // id -> reason
 	paid      map[int64]string // id -> payment ref
@@ -198,6 +200,22 @@ func (f *fakeStore) CancelAwaiting(ctx context.Context, id int64, reason string)
 	f.cancelled[id] = reason
 
 	return nil
+}
+
+// ListExpiredAwaiting returns the AWAITING_PAYMENT orders whose hold has
+// ended, as the real query does.
+func (f *fakeStore) ListExpiredAwaiting(ctx context.Context, limit int) ([]Order, error) {
+	if f.listExpiredErr != nil {
+		return nil, f.listExpiredErr
+	}
+
+	var expired []Order
+	for _, o := range f.orders {
+		if o.Status == StatusAwaitingPayment && o.ExpiresAt != nil && o.ExpiresAt.Before(time.Now()) && len(expired) < limit {
+			expired = append(expired, *o)
+		}
+	}
+	return expired, nil
 }
 
 // fakePayments signs nothing: the URL only names the order, and every

@@ -84,14 +84,46 @@ func (r *Repository) findOne(ctx context.Context, column string, value any) (Ord
 		return Order{}, err
 	}
 
-	o.Items = []Item{}
-	if err := r.db.SelectContext(ctx, &o.Items, `
-SELECT book_id, book_slug, title, author, cover_url, price_vnd
-FROM order_items WHERE order_id = @id ORDER BY id`, sql.Named("id", o.ID)); err != nil {
+	if o.Items, err = r.items(ctx, o.ID); err != nil {
 		return Order{}, err
 	}
 
 	return o, nil
+}
+
+// ListExpiredAwaiting returns up to limit AWAITING_PAYMENT orders whose hold
+// has ended, oldest first, with their items.
+func (r *Repository) ListExpiredAwaiting(ctx context.Context, limit int) ([]Order, error) {
+
+	// Reads ix_orders_status_expires_at.
+	var orders []Order
+	if err := r.db.SelectContext(ctx, &orders, `
+SELECT TOP (@limit) `+orderColumns+`
+FROM orders
+WHERE status = N'AWAITING_PAYMENT' AND expires_at < SYSUTCDATETIME()
+ORDER BY expires_at`, sql.Named("limit", limit)); err != nil {
+		return nil, err
+	}
+
+	for i := range orders {
+		var err error
+		if orders[i].Items, err = r.items(ctx, orders[i].ID); err != nil {
+			return nil, err
+		}
+	}
+
+	return orders, nil
+}
+
+// items returns the items of the order with id, in the order they were added.
+func (r *Repository) items(ctx context.Context, id int64) ([]Item, error) {
+
+	items := []Item{}
+	err := r.db.SelectContext(ctx, &items, `
+SELECT book_id, book_slug, title, author, cover_url, price_vnd
+FROM order_items WHERE order_id = @id ORDER BY id`, sql.Named("id", id))
+
+	return items, err
 }
 
 // Insert writes o and its items in one transaction, under the idempotency

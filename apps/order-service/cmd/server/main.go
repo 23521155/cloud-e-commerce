@@ -95,6 +95,12 @@ func main() {
 
 	service := order.NewService(order.NewRepository(db), catalog, payments, cfg.PaymentHold, logger.Log)
 
+	// Cancels the online orders nobody paid in time and gives their books
+	// back. It runs even without VNPay: orders placed earlier may still wait.
+	expiryCtx, stopExpiry := context.WithCancel(context.Background())
+	defer stopExpiry()
+	go service.RunExpiry(expiryCtx, time.Minute)
+
 	routes := []router.Registrar{order.NewHandler(service, logger.Log)}
 	if gateway != nil {
 		routes = append(routes, order.NewPaymentHandler(service, gateway, cfg.VNPay.ConfirmOnReturn, logger.Log))
@@ -143,6 +149,8 @@ func main() {
 	<-quit
 
 	logger.Log.Info("Shutting down server...")
+
+	stopExpiry()
 
 	// Allow in-flight requests up to 5 seconds to complete.
 	ctx, cancel := context.WithTimeout(
