@@ -19,8 +19,16 @@ export type Book = {
   rare: boolean;
   /** Real cover scan, when we have one */
   image?: string;
-  /** Still for sale; false once reserved or sold (only books asked for by slug can be unavailable) */
+  /** Still for sale; false once reserved or sold */
   available: boolean;
+  /** RESERVED while another reader is checking it out */
+  status: "AVAILABLE" | "RESERVED" | "SOLD";
+};
+
+/** How an unavailable copy is labelled on the shelves and its page. */
+export const UNAVAILABLE_LABEL: Record<Exclude<Book["status"], "AVAILABLE">, string> = {
+  RESERVED: "On hold",
+  SOLD: "Sold",
 };
 
 export type Subject = { slug: string; name: string; bookCount: number };
@@ -81,6 +89,7 @@ function toBook(b: ApiBook): Book {
     rare: b.rare,
     image: b.coverUrl ?? undefined,
     available: b.status === "AVAILABLE",
+    status: b.status,
   };
 }
 

@@ -69,10 +69,13 @@ export function BookView({ book, related }: { book: Book; related: Book[] }) {
             </div>
 
             <p className="m-0 mt-8 font-serif text-[clamp(2rem,3.4vw,3.4rem)] tabular-nums text-parchment-100">{price.format(book.price)}</p>
-            <p className="small-upper m-0 mt-1 text-gold-400">One copy · ships from the seller</p>
+            <p className="small-upper m-0 mt-1 text-gold-400">
+              {book.available ? "One copy · ships from the seller" : book.status === "RESERVED" ? "On hold · another reader is checking it out" : "Sold · this copy has found its reader"}
+            </p>
 
             <div className="mt-10 flex flex-wrap items-center gap-x-10 gap-y-6">
-              <AddToBasketButton slug={book.slug} title={book.title} />
+              {/* A sold or reserved copy can still be read about, not bought */}
+              {book.available && <AddToBasketButton slug={book.slug} title={book.title} />}
               <DotButton href="/wishlist">Save for later</DotButton>
             </div>
 

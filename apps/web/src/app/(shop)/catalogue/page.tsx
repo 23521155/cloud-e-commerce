@@ -5,7 +5,7 @@ import { ScrollToShelf } from "@/components/catalogue/ScrollToShelf";
 import { MotionController } from "@/components/motion/MotionController";
 import { BookPhoto } from "@/components/ui/BookArt";
 import { DotButton } from "@/components/ui/DotButton";
-import { SORTS, getSubjects, queryBooks, type SortKey } from "@/lib/catalogue";
+import { SORTS, UNAVAILABLE_LABEL, getSubjects, queryBooks, type SortKey } from "@/lib/catalogue";
 
 export const metadata: Metadata = {
   title: "Catalogue — Marginalleya",
@@ -172,7 +172,8 @@ export default async function CataloguePage({ searchParams }: PageProps<"/catalo
           <ul id="shelf" className="catalogue__grid m-0 list-none scroll-mt-10 p-0">
             {books.map((book) => (
               <li key={book.slug}>
-                <Link href={`/books/${book.slug}`} className="work-card" data-reveal="fade">
+                {/* Sold and reserved copies stay on the shelf, faded, so their pages can still be read */}
+                <Link href={`/books/${book.slug}`} className={`work-card ${book.available ? "" : "opacity-45 grayscale"}`} data-reveal="fade">
                   <div className="work-card__media">
                     <BookPhoto title={book.title} author={book.author} color={book.color} />
                   </div>
@@ -182,6 +183,7 @@ export default async function CataloguePage({ searchParams }: PageProps<"/catalo
                       {book.title}, {book.year}
                     </h2>
                     <div className="work-card__tags">
+                      {book.status !== "AVAILABLE" && <span className="text-gold-300">{UNAVAILABLE_LABEL[book.status]}</span>}
                       <span>+ {book.edition}</span>
                       <span>+ {book.condition}</span>
                       {book.rare && <span>+ Rare</span>}
