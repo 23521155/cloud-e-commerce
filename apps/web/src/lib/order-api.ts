@@ -4,10 +4,15 @@ import { GATEWAY_URL } from "@/lib/gateway";
 
 const BASE = `${GATEWAY_URL}/api/orders`;
 
-/** A guest cash-on-delivery checkout. Prices are not sent: the order service reads them from the catalogue. */
+/** Methods the order service places for real; the others are still mocked by /checkout/pay. */
+export type PlaceableMethod = "cod" | "vietqr" | "card";
+
+export const isPlaceable = (id: string): id is PlaceableMethod => id === "cod" || id === "vietqr" || id === "card";
+
+/** A guest checkout. Prices are not sent: the order service reads them from the catalogue. */
 export type NewOrder = {
   slugs: string[];
-  paymentMethod: "cod";
+  paymentMethod: PlaceableMethod;
   email: string;
   phone: string;
   fullName: string;
@@ -26,6 +31,8 @@ export type PlacedOrder = {
   subtotalVnd: number;
   createdAt: string;
   items: { slug: string; title: string; priceVnd: number }[];
+  /** VNPay's page for an order awaiting payment; absent once its payment window has closed. */
+  paymentUrl?: string;
 };
 
 export type PlaceOrderResult =
@@ -61,6 +68,31 @@ export async function placeOrder(key: string, { slugs, ...order }: NewOrder): Pr
 
   if (res.status === 409) return { ok: false, reason: "unavailable", slugs: (body.books ?? []).map((b) => b.slug) };
   if (res.status === 400) return { ok: false, reason: "invalid", message: (body.error ?? "").replace(/^invalid order: /, "") };
+
+  return { ok: false, reason: "failed" };
+}
+
+export type VnpayReturnResult =
+  /** The order as it is now, and what VNPay told the customer. */
+  | { ok: true; order: PlacedOrder; paymentSucceeded: boolean }
+  /** The redirect was not signed by VNPay, or names no order. */
+  | { ok: false; reason: "invalid" }
+  | { ok: false; reason: "failed" };
+
+/**
+ * GET /api/orders/payments/vnpay/return. query is the query string VNPay put on the customer's
+ * return redirect, forwarded as is: the order service checks its signature.
+ */
+export async function vnpayReturn(query: string): Promise<VnpayReturnResult> {
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/payments/vnpay/return?${query}`, { cache: "no-store" });
+  } catch {
+    return { ok: false, reason: "failed" };
+  }
+
+  if (res.ok) return { ok: true, ...((await res.json()) as { order: PlacedOrder; paymentSucceeded: boolean }) };
+  if (res.status === 400 || res.status === 404) return { ok: false, reason: "invalid" };
 
   return { ok: false, reason: "failed" };
 }

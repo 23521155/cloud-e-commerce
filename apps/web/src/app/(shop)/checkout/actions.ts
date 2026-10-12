@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { MAX_BASKET } from "@/lib/basket";
-import { placeOrder as submitOrder } from "@/lib/order-api";
+import { isPlaceable, placeOrder as submitOrder } from "@/lib/order-api";
 import { getPaymentMethod } from "@/lib/payment";
 
 /** What the checkout form shows after a refused order. Empty while nothing went wrong. */
@@ -19,11 +19,9 @@ export async function placeOrder(_prev: CheckoutState, formData: FormData): Prom
   const method = getPaymentMethod(formData.get("payment"));
   if (!method) return { error: "Choose how you would like to pay." };
 
-  // Only cash on delivery is placed for real. Online methods keep the mock provider page
-  // (/checkout/pay) until a payment gateway is integrated.
-  if (method.id !== "cod") {
-    redirect(method.flow === "gateway" ? `/checkout/pay?method=${method.id}` : `/checkout/confirmed?method=${method.id}`);
-  }
+  // Cash on delivery and the VNPay methods are placed for real. MoMo and PayPal keep the mock
+  // provider page (/checkout/pay) until their gateways are integrated.
+  if (!isPlaceable(method.id)) redirect(`/checkout/pay?method=${method.id}`);
 
   // The basket lives in the browser, so its slugs come with the form. Only the slugs: the order
   // service reads every price and checks every copy itself.
@@ -36,7 +34,7 @@ export async function placeOrder(_prev: CheckoutState, formData: FormData): Prom
   const key = text(formData, "idempotencyKey") || crypto.randomUUID();
   const result = await submitOrder(key, {
     slugs,
-    paymentMethod: "cod",
+    paymentMethod: method.id,
     email: text(formData, "email"),
     phone: text(formData, "phone"),
     fullName: text(formData, "name"),
@@ -46,7 +44,16 @@ export async function placeOrder(_prev: CheckoutState, formData: FormData): Prom
     country: text(formData, "country"),
   });
 
-  if (result.ok) redirect(`/checkout/confirmed?method=cod&code=${encodeURIComponent(result.order.code)}`);
+  if (result.ok) {
+    const { order } = result;
+    if (method.id === "cod") redirect(`/checkout/confirmed?method=cod&code=${encodeURIComponent(order.code)}`);
+
+    // The copies are held while the reader pays on VNPay's page; it sends them back to
+    // /checkout/vnpay-return. A repeated submit of an order whose time to pay ran out has no page;
+    // the form keeps its idempotency key until the page is loaded again.
+    if (order.paymentUrl) redirect(order.paymentUrl);
+    return { error: "The time to pay for this order has run out. Reload the page to place a new one." };
+  }
 
   switch (result.reason) {
     case "unavailable":
