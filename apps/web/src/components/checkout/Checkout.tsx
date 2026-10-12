@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Seal } from "@/components/cart/Basket";
-import { PlaceOrderButton, Stepper } from "@/components/checkout/CheckoutClient";
+import type { CheckoutState } from "@/app/(shop)/checkout/actions";
+import { CheckoutForm, PlaceOrderButton, Stepper } from "@/components/checkout/CheckoutClient";
 import { PaymentDetail } from "@/components/checkout/PaymentDetail";
 import type { BasketLine } from "@/lib/basket";
 import { DEFAULT_PAYMENT, PAYMENT_GROUPS, type PaymentMethod } from "@/lib/payment";
@@ -9,7 +10,7 @@ const price = new Intl.NumberFormat("en-US", { style: "currency", currency: "VND
 
 const COUNTRIES = ["Vietnam", "United States", "United Kingdom", "Australia", "Canada", "Japan", "Singapore", "Other country"];
 
-type CheckoutProps = { lines: BasketLine[]; total: number; action: (formData: FormData) => Promise<void> };
+type CheckoutProps = { lines: BasketLine[]; total: number; action: (state: CheckoutState, formData: FormData) => Promise<CheckoutState> };
 
 function Field({ label, name, hint, className = "", ...input }: { label: string; name: string; hint?: string; className?: string } & React.InputHTMLAttributes<HTMLInputElement>) {
   return (
@@ -209,7 +210,7 @@ const Terms = () => <p className="co__terms m-0">Shipping is not included in thi
 /** One step at a time: contact, delivery, then payment with the order card. */
 export function Checkout({ lines, total, action }: CheckoutProps) {
   return (
-    <form action={action} className="co co--steps">
+    <CheckoutForm action={action} className="co co--steps">
       <Stepper
         steps={[
           { key: "contact", label: "Contact", content: <ContactCard /> },
@@ -228,7 +229,7 @@ export function Checkout({ lines, total, action }: CheckoutProps) {
         ]}
         last={<PlaceOrderButton />}
       />
-    </form>
+    </CheckoutForm>
   );
 }
 

@@ -1,25 +1,14 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
+import { placeOrder } from "@/app/(shop)/checkout/actions";
 import { Checkout } from "@/components/checkout/Checkout";
 import { MotionController } from "@/components/motion/MotionController";
 import { DotButton } from "@/components/ui/DotButton";
 import { getBasket, subtotal } from "@/lib/basket";
-import { getPaymentMethod } from "@/lib/payment";
 
 export const metadata: Metadata = {
   title: "Checkout — Marginalleya",
   description: "Delivery and payment for the copies in your basket.",
 };
-
-/** Mock order: no payment, no persistence yet. Form data stays in the POST body, never the URL. */
-async function placeOrder(formData: FormData) {
-  "use server";
-  // Only the method id travels to the next page; contact and address details never enter the URL
-  const method = getPaymentMethod(formData.get("payment"));
-  if (!method) redirect("/checkout");
-  // Gateway methods hand off to the provider's page (mocked by /checkout/pay); the rest finish here
-  redirect(method.flow === "gateway" ? `/checkout/pay?method=${method.id}` : `/checkout/confirmed?method=${method.id}`);
-}
 
 export default async function CheckoutPage() {
   // Sold copies are dropped here: they cannot be bought
