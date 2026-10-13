@@ -1,0 +1,9 @@
+node_modules
+.next
+.env
+.env.*
+!.env.example
+src/generated
+.impeccable
+ref
+tsconfig.tsbuildinfo

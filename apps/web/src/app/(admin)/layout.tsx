@@ -3,6 +3,9 @@ import Link from "next/link";
 import { AdminNav } from "@/components/admin/AdminUI";
 import { Logo } from "@/components/ui/Logo";
 
+// Orders and stock are live data: render per request, never at build time (see the (shop) layout).
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "Shop office — Marginalleya",
   robots: { index: false },
