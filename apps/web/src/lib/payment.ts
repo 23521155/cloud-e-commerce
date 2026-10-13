@@ -8,11 +8,10 @@ export type PaymentMethod = {
   note: string;
   icon: "qr" | "wallet" | "parcel" | "card" | "globe";
   /**
-   * gateway: "Place order" hands the reader to the provider's page (mocked by /checkout/pay).
-   * onsite: details are entered on the checkout page itself (the provider's hosted fields).
+   * gateway: "Place order" hands the reader to the provider's page (VNPay, or the mock at /checkout/pay).
    * offline: nothing to pay online.
    */
-  flow: "gateway" | "onsite" | "offline";
+  flow: "gateway" | "offline";
 };
 
 export const PAYMENT_GROUPS: { label: string; currency: string; methods: PaymentMethod[] }[] = [

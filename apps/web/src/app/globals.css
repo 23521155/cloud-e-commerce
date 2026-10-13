@@ -1672,28 +1672,6 @@
     color: var(--color-walnut-900);
     text-align: left;
   }
-  /* Card form inside the detail panel (stand-in for the gateway's hosted fields) */
-  .co-cardform {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 18px 24px;
-    margin-top: 14px;
-  }
-  .co-cardform__number,
-  .co-cardform__name,
-  .co-cardform__note {
-    grid-column: 1 / -1;
-  }
-  .co-cardform__note {
-    margin: 0;
-    color: var(--color-ink-600);
-    font-size: 14px;
-    font-style: italic;
-    line-height: 1.45;
-  }
-  .co-cardform .co__input:disabled {
-    opacity: 0.5;
-  }
   .co-detail__title {
     margin: 0 0 8px;
     font-family: var(--font-serif);
