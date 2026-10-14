@@ -30,6 +30,9 @@ param internalToken string
 @secure()
 param jwtSecret string
 
+@description('Azure Managed Redis that holds the web app\'s shared data cache.')
+param redisName string
+
 @description('Replicas kept running when idle. 0 scales to zero (free, but the first request waits for a cold start).')
 param minReplicas int = 0
 
@@ -52,6 +55,20 @@ resource workspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' existin
 resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
   name: registryName
 }
+
+
+resource redis 'Microsoft.Cache/redisEnterprise@2025-07-01' existing = {
+  name: redisName
+}
+
+resource redisDatabase 'Microsoft.Cache/redisEnterprise/databases@2025-07-01' existing = {
+  parent: redis
+  name: 'default'
+}
+
+// rediss:// is Redis over TLS; the access key is the password.
+var redisUrl = 'rediss://:${redisDatabase.listKeys().primaryKey}@${redis.properties.hostName}:10000'
+
 
 // One identity shared by every app, granted AcrPull before any app is created,
 // so the very first revision can already pull its image.
@@ -125,6 +142,25 @@ var scale = {
   ]
 }
 
+// The web app renders every page (Next.js SSR), so it scales sooner and further than the Go services:
+// load tests showed 0.5 vCPU saturated at 100 shoppers, and 50 requests per replica scaled out too late.
+var webScale = {
+  minReplicas: minReplicas
+  maxReplicas: 5
+  rules: [
+    {
+      name: 'http'
+      http: {
+        metadata: {
+          concurrentRequests: '10'
+        }
+      }
+    }
+  ]
+}
+
+
+
 var goResources = {
   cpu: json('0.25')
   memory: '0.5Gi'
@@ -196,6 +232,9 @@ resource web 'Microsoft.App/containerApps@2024-03-01' = {
     workloadProfileName: 'Consumption'
     configuration: {
       registries: registries
+      secrets: [
+        { name: 'redis-url', value: redisUrl }
+      ]
       ingress: {
         external: true
         targetPort: 3000
@@ -208,16 +247,17 @@ resource web 'Microsoft.App/containerApps@2024-03-01' = {
           name: 'web'
           image: '${acrLoginServer}/web:${imageTag}'
           resources: {
-            cpu: json('0.5')
-            memory: '1Gi'
+            cpu: json('1')
+            memory: '2Gi'
           }
           env: [
             // Read on the server only, so it can use the internal name.
             { name: 'GATEWAY_API_URL', value: 'http://api-gateway' }
+            { name: 'REDIS_URL', secretRef: 'redis-url' }
           ]
         }
       ]
-      scale: scale
+      scale: webScale
     }
   }
 }
