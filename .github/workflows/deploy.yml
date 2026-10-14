@@ -24,6 +24,10 @@ on:
         description: 'Run the Bicep deployment even if the apps already exist'
         type: boolean
         default: false
+      seed:
+        description: 'Seed the catalog database even if the apps already exist'
+        type: boolean
+        default: false
 
 permissions:
   id-token: write # OIDC login to Azure
@@ -140,6 +144,53 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # The SQL server only accepts the apps' subnet, so the runner's IP is allowed just for the
+      # migration and the rule is removed again afterwards.
+      - name: Open SQL firewall for this runner
+        id: sql
+        run: |
+          server=$(az sql server list -g "${{ matrix.rg }}" --query "[0].name" -o tsv)
+          fqdn=$(az sql server list -g "${{ matrix.rg }}" --query "[0].fullyQualifiedDomainName" -o tsv)
+          ip=$(curl -sS https://api.ipify.org)
+          az sql server firewall-rule create -g "${{ matrix.rg }}" -s "$server" -n ci-runner \
+            --start-ip-address "$ip" --end-ip-address "$ip" -o none
+          echo "server=$server" >> "$GITHUB_OUTPUT"
+          echo "fqdn=$fqdn" >> "$GITHUB_OUTPUT"
+
+      # Runs before the new images start, so the schema is ready for them. The serverless databases
+      # may be paused, so each command retries while the first connection wakes them up.
+      - name: Migrate databases
+        env:
+          SQL_USER: sqladmin
+          SQL_PASSWORD: ${{ secrets.SQL_ADMIN_PASSWORD }}
+          SQL_FQDN: ${{ steps.sql.outputs.fqdn }}
+        run: |
+          for db in catalog:catalog-service orders:order-service; do
+            name=${db%%:*}; svc=${db##*:}
+            for attempt in 1 2 3 4 5 6; do
+              docker run --rm -v "$PWD/apps/$svc/migrations:/migrations:ro" migrate/migrate:v4.20.1 \
+                -path=/migrations \
+                -database="sqlserver://$SQL_USER:$SQL_PASSWORD@$SQL_FQDN:1433?database=$name&encrypt=true" up && break
+              [ "$attempt" = 6 ] && exit 1
+              echo "Retrying $name migration ($attempt)"; sleep 20
+            done
+          done
+
+      # Upserts the ~9k books and is safe to repeat, so it only runs when the apps are being created
+      # or when asked by hand.
+      - name: Seed catalog
+        if: steps.state.outputs.apps_exist != 'true' || inputs.seed
+        env:
+          DATABASE_URL: sqlserver://sqladmin:${{ secrets.SQL_ADMIN_PASSWORD }}@${{ steps.sql.outputs.fqdn }}:1433?database=catalog&encrypt=true
+        run: |
+          docker run --rm -e DATABASE_URL --entrypoint ./seed-job \
+            "${{ steps.acr.outputs.name }}.azurecr.io/catalog-service:$TAG"
+
+      - name: Close SQL firewall
+        if: always() && steps.sql.outputs.server != ''
+        run: |
+          az sql server firewall-rule delete -g "${{ matrix.rg }}" -s "${{ steps.sql.outputs.server }}" -n ci-runner -o none || true
 
       # Phase 2 creates the apps (first time) or applies infra changes, always with the new tag.
       - name: Deploy infrastructure and apps
