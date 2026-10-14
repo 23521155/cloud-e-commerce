@@ -1,9 +1,10 @@
 import { SiteFooter } from "@/components/layout/SiteFooter";
 import { SiteHeader } from "@/components/layout/SiteHeader";
 
-// Book status and prices change with every order, so render per request: prerendering would freeze
-// build-time data and needs the gateway during `next build`, which a Docker build does not have.
-export const dynamic = "force-dynamic";
+// Render per request (never at build time: the gateway is not reachable during a Docker build),
+// while fetches that set their own revalidate (the catalogue reads) stay cached between visitors.
+export const revalidate = 0;
+
 
 /** Customer-facing pages: side nav, content, footer. */
 export default function ShopLayout({ children }: LayoutProps<"/">) {
