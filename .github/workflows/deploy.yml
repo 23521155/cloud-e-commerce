@@ -110,6 +110,15 @@ jobs:
                jwtSecret='${{ secrets.JWT_SECRET }}' \
             -o none
 
+      # The OIDC assertion lives about 5 minutes and base provisioning (Redis) takes longer,
+      # so sign in again before the next az call needs a fresh token.
+      - name: Re-login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
       - name: Find registry
         id: acr
         run: |
@@ -124,6 +133,13 @@ jobs:
             docker build -t "$image:$TAG" "apps/$s"
             docker push "$image:$TAG"
           done
+
+      - name: Re-login to Azure after the image build
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       # Phase 2 creates the apps (first time) or applies infra changes, always with the new tag.
       - name: Deploy infrastructure and apps
