@@ -1,6 +1,6 @@
 // Catalogue client for catalog-service, reached through the API gateway.
 // Server-side only: the gateway URL is read on the server and never sent to the browser.
-import { forwardedFor, GATEWAY_URL } from "@/lib/gateway";
+import { GATEWAY_URL } from "@/lib/gateway";
 
 export type Book = {
   slug: string;
@@ -43,6 +43,13 @@ export const SORTS = [
 export type SortKey = (typeof SORTS)[number]["key"];
 
 const BASE = `${GATEWAY_URL}/api/catalog`;
+
+/**
+ * Seconds a catalogue answer is shared between visitors before it is fetched again. Book status can
+ * lag by this much, which is safe: the order service re-checks every copy when an order is placed.
+ */
+const CACHE_SECONDS = 60;
+
 
 /** The slugs the API accepts in one /books?slugs= request. */
 const MAX_BATCH = 50;
@@ -96,9 +103,9 @@ function toBook(b: ApiBook): Book {
 /** GET a catalogue API path. A 404 is "not found" (undefined); any other failure throws. */
 async function get<T>(path: string, params?: URLSearchParams): Promise<T | undefined> {
   const query = params?.toString();
-  const res = await fetch(`${BASE}${path}${query ? `?${query}` : ""}`,
-    { headers: await forwardedFor() }
-  );
+  // Shared data: no per-visitor headers, which would split the cache key per visitor.
+  const res = await fetch(`${BASE}${path}${query ? `?${query}` : ""}`, { next: { revalidate: CACHE_SECONDS } });
+
   if (res.status === 404) return undefined;
   if (!res.ok) throw new Error(`Catalogue API answered ${res.status} for ${path}`);
   return (await res.json()) as T;

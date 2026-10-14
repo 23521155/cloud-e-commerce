@@ -82,6 +82,14 @@ param imageTag string = 'v1'
 @description('Replicas each app keeps when idle. 0 = scale to zero; set 1 while measuring to avoid cold starts.')
 param minReplicas int = 0
 
+module redis 'modules/redis.bicep' = {
+  name: 'redis'
+  params: {
+    location: location
+    name: '${prefix}-redis-${suffix}'
+  }
+}
+
 module containerApps 'modules/containerapps.bicep' = {
   name: 'containerapps'
   params: {
@@ -98,6 +106,7 @@ module containerApps 'modules/containerapps.bicep' = {
     internalToken: internalToken
     jwtSecret: jwtSecret
     imageTag: imageTag
+    redisName: redis.outputs.name
   }
 }
 
