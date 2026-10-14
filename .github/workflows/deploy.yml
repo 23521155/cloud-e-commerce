@@ -1,0 +1,158 @@
+name: Deploy
+
+# Push to develop deploys to the regions in the repo variable AZURE_REGIONS
+# (default: japaneast). Run it by hand to pick another region or to force a full infra deploy.
+on:
+  push:
+    branches: [develop]
+    paths:
+      - 'apps/api-gateway/**'
+      - 'apps/catalog-service/**'
+      - 'apps/order-service/**'
+      - 'apps/web/**'
+      - 'proto/**'
+      - 'infra/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+    inputs:
+      regions:
+        description: 'Regions to deploy'
+        type: choice
+        options: [japaneast, koreacentral, both]
+        default: japaneast
+      infra:
+        description: 'Run the Bicep deployment even if the apps already exist'
+        type: boolean
+        default: false
+
+permissions:
+  id-token: write # OIDC login to Azure
+  contents: read
+
+env:
+  PREFIX: marginalleya
+  SERVICES: 'api-gateway catalog-service order-service web'
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+    steps:
+      - id: m
+        shell: bash
+        run: |
+          choice="${{ inputs.regions || vars.AZURE_REGIONS || 'japaneast' }}"
+          jp='{"location":"japaneast","rg":"rg-marginalleya-jp","sqlFreeOffer":false}'
+          kr='{"location":"koreacentral","rg":"rg-marginalleya-kr","sqlFreeOffer":true}'
+          case "$choice" in
+            both) include="$kr,$jp" ;;
+            koreacentral) include="$kr" ;;
+            *) include="$jp" ;;
+          esac
+          echo "matrix={\"include\":[$include]}" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: plan
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
+    concurrency:
+      group: deploy-${{ matrix.location }}
+      cancel-in-progress: false
+    env:
+      TAG: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the infra/ diff against the previous push needs history
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # The apps exist only after the first full deployment. When they do, a normal
+      # deploy just swaps images; otherwise (or when asked) Bicep creates or updates everything.
+      - name: Check existing infrastructure
+        id: state
+        shell: bash
+        run: |
+          az config set extension.use_dynamic_install=yes_without_prompt
+          if az containerapp show -g "${{ matrix.rg }}" -n api-gateway -o none 2>/dev/null; then
+            echo "apps_exist=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "apps_exist=false" >> "$GITHUB_OUTPUT"
+          fi
+          # Run Bicep again when asked by hand or when infra/ changed in this push.
+          run_bicep=false
+          if [ "${{ inputs.infra }}" = "true" ]; then run_bicep=true; fi
+          before="${{ github.event.before }}"
+          if [ "${{ github.event_name }}" = "push" ] && [ -n "$before" ] && ! git diff --quiet "$before" HEAD -- infra 2>/dev/null; then
+            run_bicep=true
+          fi
+          echo "run_bicep=$run_bicep" >> "$GITHUB_OUTPUT"
+
+      - name: Create resource group
+        run: az group create -n "${{ matrix.rg }}" -l "${{ matrix.location }}" -o none
+
+      # Phase 1 creates the registry, SQL, Redis, monitoring and network, so images have somewhere to go.
+      - name: Provision base infrastructure
+        if: steps.state.outputs.apps_exist != 'true'
+        run: |
+          az deployment group create -g "${{ matrix.rg }}" -n "base-${{ github.run_id }}" \
+            -f infra/main.bicep \
+            -p location=${{ matrix.location }} sqlFreeOffer=${{ matrix.sqlFreeOffer }} deployApps=false \
+               sqlAdminPassword='${{ secrets.SQL_ADMIN_PASSWORD }}' \
+               internalToken='${{ secrets.INTERNAL_TOKEN }}' \
+               jwtSecret='${{ secrets.JWT_SECRET }}' \
+            -o none
+
+      - name: Find registry
+        id: acr
+        run: |
+          name=$(az acr list -g "${{ matrix.rg }}" --query "[0].name" -o tsv)
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          az acr login -n "$name"
+
+      - name: Build and push images
+        run: |
+          for s in $SERVICES; do
+            image="${{ steps.acr.outputs.name }}.azurecr.io/$s"
+            docker build -t "$image:$TAG" "apps/$s"
+            docker push "$image:$TAG"
+          done
+
+      # Phase 2 creates the apps (first time) or applies infra changes, always with the new tag.
+      - name: Deploy infrastructure and apps
+        if: steps.state.outputs.apps_exist != 'true' || steps.state.outputs.run_bicep == 'true'
+        run: |
+          az deployment group create -g "${{ matrix.rg }}" -n "apps-${{ github.run_id }}" \
+            -f infra/main.bicep \
+            -p location=${{ matrix.location }} sqlFreeOffer=${{ matrix.sqlFreeOffer }} deployApps=true imageTag=$TAG \
+               sqlAdminPassword='${{ secrets.SQL_ADMIN_PASSWORD }}' \
+               internalToken='${{ secrets.INTERNAL_TOKEN }}' \
+               jwtSecret='${{ secrets.JWT_SECRET }}' \
+            -o none
+
+      # Apps already exist and Bicep was skipped: only move each app to the new image (new revision).
+      - name: Update app images
+        if: steps.state.outputs.apps_exist == 'true' && steps.state.outputs.run_bicep != 'true'
+        run: |
+          for s in $SERVICES; do
+            az containerapp update -g "${{ matrix.rg }}" -n "$s" \
+              --image "${{ steps.acr.outputs.name }}.azurecr.io/$s:$TAG" -o none
+          done
+
+      - name: Smoke test
+        shell: bash
+        run: |
+          gw=$(az containerapp show -g "${{ matrix.rg }}" -n api-gateway --query properties.configuration.ingress.fqdn -o tsv)
+          web=$(az containerapp show -g "${{ matrix.rg }}" -n web --query properties.configuration.ingress.fqdn -o tsv)
+          # Apps may be scaled to zero, so allow for a cold start.
+          curl --fail --retry 10 --retry-delay 10 --retry-all-errors -sS "https://$gw/health"
+          curl --fail --retry 10 --retry-delay 10 --retry-all-errors -sS -o /dev/null "https://$web/"
+          echo "web:     https://$web" >> "$GITHUB_STEP_SUMMARY"
+          echo "gateway: https://$gw" >> "$GITHUB_STEP_SUMMARY"

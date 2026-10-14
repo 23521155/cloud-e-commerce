@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [develop]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      api-gateway: ${{ steps.f.outputs.api-gateway }}
+      catalog-service: ${{ steps.f.outputs.catalog-service }}
+      order-service: ${{ steps.f.outputs.order-service }}
+      web: ${{ steps.f.outputs.web }}
+      infra: ${{ steps.f.outputs.infra }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: f
+        with:
+          filters: |
+            api-gateway:
+              - 'apps/api-gateway/**'
+            catalog-service:
+              - 'apps/catalog-service/**'
+              - 'proto/**'
+            order-service:
+              - 'apps/order-service/**'
+              - 'proto/**'
+            web:
+              - 'apps/web/**'
+            infra:
+              - 'infra/**'
+
+  go:
+    needs: changes
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [api-gateway, catalog-service, order-service]
+    steps:
+      - uses: actions/checkout@v4
+        if: needs.changes.outputs[matrix.service] == 'true'
+      - uses: actions/setup-go@v5
+        if: needs.changes.outputs[matrix.service] == 'true'
+        with:
+          go-version-file: apps/${{ matrix.service }}/go.mod
+          cache-dependency-path: apps/${{ matrix.service }}/go.sum
+      - name: Vet and test
+        if: needs.changes.outputs[matrix.service] == 'true'
+        working-directory: apps/${{ matrix.service }}
+        run: |
+          go vet ./...
+          go test ./...
+      - name: Docker build
+        if: needs.changes.outputs[matrix.service] == 'true'
+        run: docker build apps/${{ matrix.service }}
+
+  web:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+      - name: Docker build
+        working-directory: .
+        run: docker build apps/web
+
+  infra:
+    needs: changes
+    if: needs.changes.outputs.infra == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile Bicep
+        run: az bicep build --file infra/main.bicep --stdout > /dev/null
