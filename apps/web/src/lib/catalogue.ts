@@ -1,6 +1,6 @@
 // Catalogue client for catalog-service, reached through the API gateway.
 // Server-side only: the gateway URL is read on the server and never sent to the browser.
-import { GATEWAY_URL } from "@/lib/gateway";
+import { forwardedFor, GATEWAY_URL } from "@/lib/gateway";
 
 export type Book = {
   slug: string;
@@ -96,7 +96,9 @@ function toBook(b: ApiBook): Book {
 /** GET a catalogue API path. A 404 is "not found" (undefined); any other failure throws. */
 async function get<T>(path: string, params?: URLSearchParams): Promise<T | undefined> {
   const query = params?.toString();
-  const res = await fetch(`${BASE}${path}${query ? `?${query}` : ""}`);
+  const res = await fetch(`${BASE}${path}${query ? `?${query}` : ""}`,
+    { headers: await forwardedFor() }
+  );
   if (res.status === 404) return undefined;
   if (!res.ok) throw new Error(`Catalogue API answered ${res.status} for ${path}`);
   return (await res.json()) as T;

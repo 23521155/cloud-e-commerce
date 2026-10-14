@@ -310,6 +310,9 @@ resource gateway 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'USER_SERVICE', value: '' }
             { name: 'CATALOG_SERVICE', value: 'http://${catalog.name}' }
             { name: 'ORDER_SERVICE', value: 'http://${order.name}' }
+            // Ranges Container Apps reserves for its own ingress and container network (workload profiles),
+            // per learn.microsoft.com/azure/container-apps/custom-virtual-networks, plus the app subnet.
+            { name: 'TRUSTED_PROXIES', value: '100.100.0.0/17,100.100.128.0/19,100.100.160.0/19,100.100.192.0/19,10.20.0.0/24' }
           ]
         }
       ]

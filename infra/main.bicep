@@ -76,6 +76,9 @@ module monitoring 'modules/monitoring.bicep' = {
   }
 }
 
+@description('Tag of every image in the registry.')
+param imageTag string = 'v1'
+
 @description('Replicas each app keeps when idle. 0 = scale to zero; set 1 while measuring to avoid cold starts.')
 param minReplicas int = 0
 
@@ -94,6 +97,7 @@ module containerApps 'modules/containerapps.bicep' = {
     sqlAdminPassword: sqlAdminPassword
     internalToken: internalToken
     jwtSecret: jwtSecret
+    imageTag: imageTag
   }
 }
 
