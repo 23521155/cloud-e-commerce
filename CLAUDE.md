@@ -26,9 +26,9 @@ University course project (đồ án): an e-commerce (book store) platform built
 | DB access (recommender) | SQLAlchemy + pyodbc (ODBC Driver 18) | — |
 | Cache | Redis (local: `redis:8-alpine`) | Not used by any service yet; Azure service not decided |
 | Messaging | RabbitMQ (local only) | **Azure option not decided yet** — decide later (Azure has no managed RabbitMQ; candidates: Service Bus, or self-hosted container) |
-| Hosting | Azure App Service Web Apps: `web` as code (Node.js runtime stack); backend services as containers | Required by the assignment: Web Apps |
-| Registry | Azure Container Registry for all container images, pulled via managed identity | No admin credentials |
-| Networking | `web` and `api-gateway` reachable from the internet; other services internal only | Only the gateway exposes the backend |
+| Hosting | Azure Container Apps (workload-profiles environment, Consumption profile) for every service, `web` included (`apps/web/Dockerfile`). Bicep in `infra/` (`main.bicep` + `modules/`), one resource group per region; region is the `location` parameter (allowed: `koreacentral`, `japaneast`, ...) | Chosen by the owner over App Service Web Apps (which `docs/course/project.md` names): fits the microservices, internal networking and gRPC built in, monthly free grant. The owner justifies the choice to the lecturer |
+| Registry | Azure Container Registry for all container images, pulled via a user-assigned managed identity with AcrPull | No admin credentials |
+| Networking | `web` and `api-gateway` have external ingress; `catalog-service` and `order-service` internal ingress only. Apps call each other by app name inside the environment (`http://catalog-service`, gRPC on `catalog-service:9083` without TLS). The environment's subnet has a `Microsoft.Sql` service endpoint; SQL accepts only that subnet plus the owner's IP | Only the gateway exposes the backend |
 | Monitoring (local) | OpenTelemetry → Jaeger (traces), Prometheus + Grafana (metrics), Loki + Promtail (logs) — `infra/compose.yaml` | Local observability stack |
 | Monitoring (Azure) | Application Insights (workspace-based) + Log Analytics + Azure Monitor metric alerts → email action group | Required by the course |
 | IaC | Bicep, one module per concern in `infra/modules/` | Native Azure |
