@@ -15,6 +15,9 @@ param adminPassword string
 @description('Subnet allowed to connect (the App Service apps).')
 param appsSubnetId string
 
+@description('Use the Azure SQL free offer. false where the offer fails or is used up: same serverless compute, billed per vCore-second.')
+param useFreeOffer bool = true
+
 @description('Your public IP, so migrations and seeding can run from your machine. Empty: no rule.')
 param clientIp string = ''
 
@@ -58,14 +61,15 @@ resource databases 'Microsoft.Sql/servers/databases@2023-08-01' = [for db in dat
     name: 'GP_S_Gen5_2'
     tier: 'GeneralPurpose'
   }
-  properties: {
-    useFreeLimit: true
-    freeLimitExhaustionBehavior: 'AutoPause'
+  properties: union({
     maxSizeBytes: 34359738368
-    autoPauseDelay: 60
+    autoPauseDelay: useFreeOffer ? 60 : 15 // billed: pause after 15 idle minutes
     minCapacity: json('0.5')
     requestedBackupStorageRedundancy: 'Local'
-  }
+  }, useFreeOffer ? {
+    useFreeLimit: true
+    freeLimitExhaustionBehavior: 'AutoPause'
+  } : {})
 }]
 
 output serverFqdn string = server.properties.fullyQualifiedDomainName

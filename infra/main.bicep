@@ -51,6 +51,9 @@ module network 'modules/network.bicep' = {
   }
 }
 
+@description('Use the Azure SQL free offer (false in regions where it fails, e.g. japaneast).')
+param sqlFreeOffer bool = true
+
 module sql 'modules/sql.bicep' = {
   name: 'sql'
   params: {
@@ -64,6 +67,7 @@ module sql 'modules/sql.bicep' = {
     adminPassword: sqlAdminPassword
     appsSubnetId: network.outputs.appsSubnetId
     clientIp: clientIp
+    useFreeOffer: sqlFreeOffer
   }
 }
 
