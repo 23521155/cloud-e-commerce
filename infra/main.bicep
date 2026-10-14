@@ -76,6 +76,9 @@ module monitoring 'modules/monitoring.bicep' = {
   }
 }
 
+@description('false: create only the registry, SQL, monitoring, network and Redis, so images can be pushed before the apps start.')
+param deployApps bool = true
+
 @description('Tag of every image in the registry.')
 param imageTag string = 'v1'
 
@@ -90,7 +93,7 @@ module redis 'modules/redis.bicep' = {
   }
 }
 
-module containerApps 'modules/containerapps.bicep' = {
+module containerApps 'modules/containerapps.bicep' = if(deployApps) {
   name: 'containerapps'
   params: {
     location: location
@@ -113,5 +116,5 @@ module containerApps 'modules/containerapps.bicep' = {
 output registryName string = registry.outputs.name
 output registryLoginServer string = registry.outputs.loginServer
 output sqlServerFqdn string = sql.outputs.serverFqdn
-output webUrl string = containerApps.outputs.webUrl
-output gatewayUrl string = containerApps.outputs.gatewayUrl
+output webUrl string = containerApps.?outputs.webUrl ?? ''
+output gatewayUrl string = containerApps.?outputs.gatewayUrl ?? ''
