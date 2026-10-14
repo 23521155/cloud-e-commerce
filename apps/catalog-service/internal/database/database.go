@@ -17,6 +17,13 @@ func Open(ctx context.Context, url string) (*sqlx.DB, error) {
 		return nil, err
 	}
 
+	// Azure drops TCP connections that sit idle (the Container Apps load balancer after about four
+	// minutes, the Azure SQL gateway after thirty) without telling either end, and a query on such a
+	// pooled connection hangs until its deadline. Retire idle connections before that can happen.
+	db.SetConnMaxIdleTime(3 * time.Minute)
+	db.SetConnMaxLifetime(30 * time.Minute)
+
+
 	// Azure SQL serverless auto-pauses; the first connection after a
 	// pause can take up to a minute while the database resumes.
 	pingCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
