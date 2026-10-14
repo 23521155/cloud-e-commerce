@@ -2,6 +2,8 @@ package config
 
 import (
 	"os"
+	"strings"
+
 	"github.com/joho/godotenv"
 	"gopkg.in/yaml.v3"
 )
@@ -22,6 +24,10 @@ type Config struct {
 	AccessTokenExpire string
 
 	RoutesConfig []RouteConfig
+
+	// TrustedProxies are the proxies (IPs or CIDRs) whose X-Forwarded-For the
+	// gateway believes when working out the client IP. Empty: trust none.
+	TrustedProxies []string
 }
 
 // Load reads environment variables (via a .env file) into a Config.
@@ -47,6 +53,8 @@ func Load() (*Config, error) {
 		JWTIssuer: os.Getenv("JWT_ISSUER"),
 
 		AccessTokenExpire: os.Getenv("ACCESS_TOKEN_EXPIRE"),
+
+		TrustedProxies: splitList(os.Getenv("TRUSTED_PROXIES")),
 	}
 
 	routesData, err := os.ReadFile("configs/routes.yaml")
@@ -69,4 +77,15 @@ func Load() (*Config, error) {
 	cfg.RoutesConfig = wrapper.Routes
 	
 	return cfg, nil
+}
+
+// splitList turns "a, b,,c" into [a b c]; an empty string gives nil.
+func splitList(s string) []string {
+	var out []string
+	for _, part := range strings.Split(s, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }

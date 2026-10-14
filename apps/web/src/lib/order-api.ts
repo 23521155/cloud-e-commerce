@@ -1,6 +1,6 @@
 // Order client for order-service, reached through the API gateway.
 // Server-side only: the gateway URL is read on the server and never sent to the browser.
-import { GATEWAY_URL } from "@/lib/gateway";
+import { forwardedFor, GATEWAY_URL } from "@/lib/gateway";
 
 const BASE = `${GATEWAY_URL}/api/orders`;
 
@@ -53,7 +53,7 @@ export async function placeOrder(key: string, { slugs, ...order }: NewOrder): Pr
   try {
     res = await fetch(BASE, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Idempotency-Key": key },
+      headers: { "Content-Type": "application/json", "Idempotency-Key": key, ...(await forwardedFor()) },
       body: JSON.stringify({ items: slugs.map((slug) => ({ slug })), ...order }),
       cache: "no-store",
     });
@@ -86,7 +86,7 @@ export type VnpayReturnResult =
 export async function vnpayReturn(query: string): Promise<VnpayReturnResult> {
   let res: Response;
   try {
-    res = await fetch(`${BASE}/payments/vnpay/return?${query}`, { cache: "no-store" });
+    res = await fetch(`${BASE}/payments/vnpay/return?${query}`, { cache: "no-store", headers: await forwardedFor() });
   } catch {
     return { ok: false, reason: "failed" };
   }

@@ -26,7 +26,9 @@ func SetupRouter(
 
 	r := gin.New()
 
-	if err := r.SetTrustedProxies(nil); err != nil {
+	// Behind a proxy (Azure Container Apps ingress), the client IP comes from
+	// X-Forwarded-For, read right to left until the first untrusted address.
+	if err := r.SetTrustedProxies(cfg.TrustedProxies); err != nil {
         logger.Log.Fatal(
             "cannot configure trusted proxies",
             zap.Error(err),
