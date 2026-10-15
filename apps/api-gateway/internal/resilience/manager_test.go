@@ -1,10 +1,20 @@
 package resilience
 import (
-	"testing"
-	"net/http"
 	"errors"
+	"net/http"
+	"os"
+	"testing"
+
+	"github.com/fizzisme/api-gateway/internal/metrics"
 	"github.com/sony/gobreaker/v2"
 )
+
+// TestMain registers the Prometheus collectors once: a breaker records its
+// state changes into them.
+func TestMain(m *testing.M) {
+	metrics.Init()
+	os.Exit(m.Run())
+}
 
 func TestBreaker_OpenAfterFailures(t *testing.T){
 	breaker := NewBreaker("auth")
