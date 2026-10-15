@@ -143,6 +143,21 @@ ORDER BY created_at DESC`,
 	return orders, nil
 }
 
+// LinkGuestOrders sets userID on the guest orders placed with email and
+// returns how many. The email was typed at checkout, so case is ignored.
+func (r *Repository) LinkGuestOrders(ctx context.Context, userID, email string) (int64, error) {
+
+	res, err := r.db.ExecContext(ctx, `
+UPDATE orders SET user_id = @user_id, updated_at = SYSUTCDATETIME()
+WHERE user_id IS NULL AND LOWER(email) = LOWER(@email)`,
+		sql.Named("user_id", userID), sql.Named("email", email))
+	if err != nil {
+		return 0, err
+	}
+
+	return res.RowsAffected()
+}
+
 // items returns the items of the order with id, in the order they were added.
 func (r *Repository) items(ctx context.Context, id int64) ([]Item, error) {
 

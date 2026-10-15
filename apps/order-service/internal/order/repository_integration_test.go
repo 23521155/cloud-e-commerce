@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -442,5 +443,42 @@ func TestListByUserShowsOnlyTheCustomersOrders(t *testing.T) {
 	none, err := repo.ListByUser(ctx, "it-user-nobody", 10)
 	if err != nil || none == nil || len(none) != 0 {
 		t.Errorf("no orders = %v, %v; want an empty list", none, err)
+	}
+}
+
+func TestLinkGuestOrders(t *testing.T) {
+	repo := newTestRepo(t)
+	ctx := context.Background()
+
+	email := "IT-" + newKey() + "@Example.com"
+	user, other := "it-user-"+newKey(), "it-user-"+newKey()
+
+	insert := func(owner *string) *Order {
+		t.Helper()
+		o := newTestOrder(t, repo)
+		o.Email, o.UserID = email, owner
+		if err := repo.Insert(ctx, newKey(), o); err != nil {
+			t.Fatal(err)
+		}
+		return o
+	}
+
+	guest := insert(nil)
+	theirs := insert(&other)
+
+	n, err := repo.LinkGuestOrders(ctx, user, strings.ToLower(email))
+	if err != nil || n != 1 {
+		t.Fatalf("LinkGuestOrders = %d, %v; want 1", n, err)
+	}
+
+	if got, _ := repo.FindByCode(ctx, guest.Code); got.UserID == nil || *got.UserID != user {
+		t.Errorf("guest order user = %v, want %s", got.UserID, user)
+	}
+	if got, _ := repo.FindByCode(ctx, theirs.Code); got.UserID == nil || *got.UserID != other {
+		t.Errorf("someone else's order moved to %v", got.UserID)
+	}
+
+	if n, _ := repo.LinkGuestOrders(ctx, user, email); n != 0 {
+		t.Errorf("second call linked %d, want 0", n)
 	}
 }

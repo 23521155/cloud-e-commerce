@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/fizzisme/order-service/internal/accountevents"
 	"github.com/fizzisme/order-service/internal/catalogclient"
 	"github.com/fizzisme/order-service/internal/config"
 	"github.com/fizzisme/order-service/internal/database"
@@ -101,6 +102,24 @@ func main() {
 	defer stopExpiry()
 	go service.RunExpiry(expiryCtx, time.Minute)
 
+	// Gives readers the orders they placed as guests once the user service
+	// says they confirmed the address (internal/accountevents).
+	eventsCtx, stopEvents := context.WithCancel(context.Background())
+	defer stopEvents()
+
+	if cfg.StorageConnectionString == "" {
+		logger.Log.Warn("STORAGE_CONNECTION_STRING is not set: guest orders are not linked to accounts")
+	} else {
+		queue, err := accountevents.NewStorageQueue(cfg.StorageConnectionString, accountevents.QueueEmailVerified)
+		if err != nil {
+			logger.Log.Fatal(
+				"invalid STORAGE_CONNECTION_STRING",
+				zap.Error(err),
+			)
+		}
+		go accountevents.NewConsumer(queue, service, logger.Log).Run(eventsCtx)
+	}
+
 	routes := []router.Registrar{order.NewHandler(service, logger.Log)}
 	if gateway != nil {
 		routes = append(routes, order.NewPaymentHandler(service, gateway, cfg.VNPay.ConfirmOnReturn, logger.Log))
@@ -151,6 +170,7 @@ func main() {
 	logger.Log.Info("Shutting down server...")
 
 	stopExpiry()
+	stopEvents()
 
 	// Allow in-flight requests up to 5 seconds to complete.
 	ctx, cancel := context.WithTimeout(

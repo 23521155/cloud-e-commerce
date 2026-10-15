@@ -3,6 +3,7 @@ package order
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -145,6 +146,18 @@ func (f *fakeStore) Insert(ctx context.Context, key string, o *Order) error {
 	f.inserted = append(f.inserted, &stored)
 
 	return nil
+}
+
+func (f *fakeStore) LinkGuestOrders(ctx context.Context, userID, email string) (int64, error) {
+	var n int64
+	for _, o := range f.inserted {
+		if o.UserID == nil && strings.EqualFold(o.Email, email) {
+			id := userID
+			o.UserID = &id
+			n++
+		}
+	}
+	return n, nil
 }
 
 func (f *fakeStore) ListByUser(ctx context.Context, userID string, limit int) ([]Order, error) {
@@ -566,5 +579,40 @@ func twoBooks() []catalogclient.Book {
 	return []catalogclient.Book{
 		{ID: 1, Slug: "nha-gia-kim", Title: "Nhà giả kim", PriceVND: 120000},
 		{ID: 2, Slug: "dac-nhan-tam", Title: "Đắc nhân tâm", PriceVND: 80000},
+	}
+}
+
+func TestLinkGuestOrdersOnlyTakesGuestOrdersWithTheAddress(t *testing.T) {
+
+	store := newFakeStore()
+	svc := newTestService(store, &fakeCatalog{books: twoBooks()})
+	ctx := context.Background()
+
+	place := func(email string, user *string) {
+		t.Helper()
+		in := validInput()
+		in.Key = fmt.Sprintf("3f9c1a52-7b0e-4d4a-9c1e-8a2b5d6f7e%02d", len(store.inserted))
+		in.Email, in.UserID = email, user
+		if _, _, err := svc.Create(ctx, in); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	other := "someone-else"
+	place("Reader@Example.com", nil)    // a guest order with the address, typed differently
+	place("reader@example.com", &other) // already someone's
+	place("other@example.com", nil)     // another guest
+
+	n, err := svc.LinkGuestOrders(ctx, "u1", "reader@example.com")
+	if err != nil || n != 1 {
+		t.Fatalf("linked %d, %v; want 1", n, err)
+	}
+	if mine, _ := svc.ListMine(ctx, "u1"); len(mine) != 1 || mine[0].Email != "Reader@Example.com" {
+		t.Errorf("u1 has %+v", mine)
+	}
+
+	// The event comes twice: nothing more is linked.
+	if n, _ := svc.LinkGuestOrders(ctx, "u1", "reader@example.com"); n != 0 {
+		t.Errorf("second call linked %d, want 0", n)
 	}
 }

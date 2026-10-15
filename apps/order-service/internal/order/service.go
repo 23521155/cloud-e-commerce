@@ -84,6 +84,7 @@ type Store interface {
 	CancelAwaiting(ctx context.Context, id int64, reason string) error
 	ListExpiredAwaiting(ctx context.Context, limit int) ([]Order, error)
 	ListByUser(ctx context.Context, userID string, limit int) ([]Order, error)
+	LinkGuestOrders(ctx context.Context, userID, email string) (int64, error)
 }
 
 // Payments is what the service needs from the payment gateway. The real one
@@ -342,6 +343,14 @@ const maxListed = 100
 // unpaid, never became an order for the customer.
 func (s *Service) ListMine(ctx context.Context, userID string) ([]Order, error) {
 	return s.store.ListByUser(ctx, userID, maxListed)
+}
+
+// LinkGuestOrders gives a reader the orders placed as a guest with an email
+// address they have confirmed (internal/accountevents), and returns how many.
+// Orders that already belong to an account are left alone, so a repeated
+// call links nothing more.
+func (s *Service) LinkGuestOrders(ctx context.Context, userID, email string) (int64, error) {
+	return s.store.LinkGuestOrders(ctx, userID, email)
 }
 
 // replay answers a repeated request with the order the key already placed,
