@@ -18,6 +18,7 @@ jobs:
       api-gateway: ${{ steps.f.outputs.api-gateway }}
       catalog-service: ${{ steps.f.outputs.catalog-service }}
       order-service: ${{ steps.f.outputs.order-service }}
+      user-service: ${{ steps.f.outputs.user-service }}
       web: ${{ steps.f.outputs.web }}
       infra: ${{ steps.f.outputs.infra }}
     steps:
@@ -34,6 +35,8 @@ jobs:
             order-service:
               - 'apps/order-service/**'
               - 'proto/**'
+            user-service:
+              - 'apps/user-service/**'
             web:
               - 'apps/web/**'
             infra:
@@ -45,7 +48,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [api-gateway, catalog-service, order-service]
+        service: [api-gateway, catalog-service, order-service, user-service]
     steps:
       - uses: actions/checkout@v4
         if: needs.changes.outputs[matrix.service] == 'true'

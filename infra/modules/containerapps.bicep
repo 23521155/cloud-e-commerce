@@ -44,6 +44,7 @@ var acrLoginServer = '${registryName}.azurecr.io'
 // Azure SQL only needs encrypt=true (no trustServerCertificate as with local containers).
 var catalogDbUrl = 'sqlserver://${sqlAdminLogin}:${sqlAdminPassword}@${sqlServerFqdn}:1433?database=catalog&encrypt=true'
 var orderDbUrl = 'sqlserver://${sqlAdminLogin}:${sqlAdminPassword}@${sqlServerFqdn}:1433?database=orders&encrypt=true'
+var usersDbUrl = 'sqlserver://${sqlAdminLogin}:${sqlAdminPassword}@${sqlServerFqdn}:1433?database=users&encrypt=true'
 
 // Built-in role that lets an identity pull images from a registry.
 var acrPullRoleId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
@@ -315,6 +316,52 @@ resource order 'Microsoft.App/containerApps@2024-03-01' = {
   }
 }
 
+resource user 'Microsoft.App/containerApps@2024-03-01' = {
+  name: 'user-service'
+  location: location
+  identity: identity
+  dependsOn: [
+    acrPull
+  ]
+  properties: {
+    environmentId: environment.id
+    workloadProfileName: 'Consumption'
+    configuration: {
+      registries: registries
+      secrets: [
+        #disable-next-line use-secure-value-for-secure-inputs // built from the secure sqlAdminPassword
+        { name: 'database-url', value: usersDbUrl }
+        { name: 'jwt-secret', value: jwtSecret }
+      ]
+      ingress: {
+        external: false // internal only: the gateway calls it and sets the trusted X-User-* headers
+        targetPort: 8085
+        transport: 'http'
+      }
+    }
+    template: {
+      containers: [
+        {
+          name: 'user-service'
+          image: '${acrLoginServer}/user-service:${imageTag}'
+          resources: goResources
+          env: [
+            { name: 'APP_NAME', value: 'user-service' }
+            { name: 'PORT', value: '8085' }
+            { name: 'GIN_MODE', value: 'release' }
+            { name: 'DATABASE_URL', secretRef: 'database-url' }
+            // Signs the access tokens the gateway verifies: same secret and issuer.
+            { name: 'JWT_SECRET', secretRef: 'jwt-secret' }
+            { name: 'JWT_ISSUER', value: prefix }
+            { name: 'JWT_ACCESS_TTL', value: '15m' }
+          ]
+        }
+      ]
+      scale: scale
+    }
+  }
+}
+
 resource gateway 'Microsoft.App/containerApps@2024-03-01' = {
   name: 'api-gateway'
   location: location
@@ -347,7 +394,7 @@ resource gateway 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'PORT', value: '8080' }
             { name: 'JWT_SECRET', secretRef: 'jwt-secret' }
             { name: 'JWT_ISSUER', value: prefix }
-            { name: 'USER_SERVICE', value: '' }
+            { name: 'USER_SERVICE', value: 'http://${user.name}' }
             { name: 'CATALOG_SERVICE', value: 'http://${catalog.name}' }
             { name: 'ORDER_SERVICE', value: 'http://${order.name}' }
             // Ranges Container Apps reserves for its own ingress and container network (workload profiles),

@@ -9,6 +9,7 @@ on:
       - 'apps/api-gateway/**'
       - 'apps/catalog-service/**'
       - 'apps/order-service/**'
+      - 'apps/user-service/**'
       - 'apps/web/**'
       - 'proto/**'
       - 'infra/**'
@@ -35,7 +36,7 @@ permissions:
 
 env:
   PREFIX: marginalleya
-  SERVICES: 'api-gateway catalog-service order-service web'
+  SERVICES: 'api-gateway catalog-service order-service user-service web'
 
 jobs:
   plan:
@@ -103,8 +104,9 @@ jobs:
         run: az group create -n "${{ matrix.rg }}" -l "${{ matrix.location }}" -o none
 
       # Phase 1 creates the registry, SQL, Redis, monitoring and network, so images have somewhere to go.
+      # It also runs when infra/ changed, so a new database exists before the migrations below.
       - name: Provision base infrastructure
-        if: steps.state.outputs.apps_exist != 'true'
+        if: steps.state.outputs.apps_exist != 'true' || steps.state.outputs.run_bicep == 'true'
         run: |
           az deployment group create -g "${{ matrix.rg }}" -n "base-${{ github.run_id }}" \
             -f infra/main.bicep \
@@ -166,7 +168,7 @@ jobs:
           SQL_PASSWORD: ${{ secrets.SQL_ADMIN_PASSWORD }}
           SQL_FQDN: ${{ steps.sql.outputs.fqdn }}
         run: |
-          for db in catalog:catalog-service orders:order-service; do
+          for db in catalog:catalog-service orders:order-service users:user-service; do
             name=${db%%:*}; svc=${db##*:}
             for attempt in 1 2 3 4 5 6; do
               docker run --rm -v "$PWD/apps/$svc/migrations:/migrations:ro" migrate/migrate:v4.20.1 \
@@ -220,6 +222,8 @@ jobs:
           web=$(az containerapp show -g "${{ matrix.rg }}" -n web --query properties.configuration.ingress.fqdn -o tsv)
           # Apps may be scaled to zero, so allow for a cold start.
           curl --fail --retry 10 --retry-delay 10 --retry-all-errors -sS "https://$gw/health"
+          # Through the gateway to user-service, which also checks its database.
+          curl --fail --retry 10 --retry-delay 10 --retry-all-errors -sS "https://$gw/api/users/health"
           curl --fail --retry 10 --retry-delay 10 --retry-all-errors -sS -o /dev/null "https://$web/"
           echo "web:     https://$web" >> "$GITHUB_STEP_SUMMARY"
           echo "gateway: https://$gw" >> "$GITHUB_STEP_SUMMARY"
