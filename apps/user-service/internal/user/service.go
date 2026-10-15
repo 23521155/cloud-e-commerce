@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/fizzisme/user-service/internal/outbox"
 	"github.com/fizzisme/user-service/internal/token"
 	"github.com/google/uuid"
 )
@@ -55,7 +56,7 @@ const (
 // store is what the service needs from the repository; tests replace it
 // with a fake.
 type store interface {
-	Create(ctx context.Context, u User) (User, error)
+	Create(ctx context.Context, u User, verify EmailToken, messages ...outbox.Message) (User, error)
 	FindByEmail(ctx context.Context, email string) (User, error)
 	FindByID(ctx context.Context, id string) (User, error)
 	UpdateProfile(ctx context.Context, id, name string, p Profile) (User, error)
@@ -77,12 +78,25 @@ type Service struct {
 	// a device stays signed in without being used.
 	refreshTTL time.Duration
 
+	// webURL is the shop's address, for the links in emails.
+	webURL string
+
 	// now is time.Now outside tests.
 	now func() time.Time
 }
 
-func NewService(store store, tokens issuer, refreshTTL time.Duration) *Service {
-	return &Service{store: store, tokens: tokens, refreshTTL: refreshTTL, now: time.Now}
+// Options are the service's settings from the environment.
+type Options struct {
+	// RefreshTTL is how long a device stays signed in without being used.
+	RefreshTTL time.Duration
+
+	// WebURL is the web app's address (no trailing slash), for the links
+	// in emails.
+	WebURL string
+}
+
+func NewService(store store, tokens issuer, o Options) *Service {
+	return &Service{store: store, tokens: tokens, refreshTTL: o.RefreshTTL, webURL: o.WebURL, now: time.Now}
 }
 
 // RegisterInput is a new account as the user typed it.
@@ -120,13 +134,22 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (User, error) 
 		return User{}, err
 	}
 
-	return s.store.Create(ctx, User{
+	u := User{
 		ID:           id.String(),
 		Email:        email,
 		PasswordHash: hash,
 		Name:         name,
 		Role:         RoleCustomer,
-	})
+	}
+
+	// The account and the email asking to confirm its address are stored
+	// together: neither exists without the other.
+	verify, msg, err := s.verification(u)
+	if err != nil {
+		return User{}, err
+	}
+
+	return s.store.Create(ctx, u, verify, msg)
 }
 
 // Login checks an email and password and starts a session for the account

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/fizzisme/user-service/internal/database"
+	"github.com/fizzisme/user-service/internal/outbox"
 	"github.com/google/uuid"
 )
 
@@ -51,7 +52,7 @@ func TestCreateReturnsStoredRow(t *testing.T) {
 	repo := newTestRepo(t)
 	u := newUser(t, repo)
 
-	got, err := repo.Create(context.Background(), u)
+	got, err := repo.Create(context.Background(), u, testVerification(u))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,14 +69,14 @@ func TestCreateRefusesDuplicateEmail(t *testing.T) {
 	repo := newTestRepo(t)
 	u := newUser(t, repo)
 
-	if _, err := repo.Create(context.Background(), u); err != nil {
+	if _, err := repo.Create(context.Background(), u, testVerification(u)); err != nil {
 		t.Fatal(err)
 	}
 
 	again := u
 	again.ID = uuid.Must(uuid.NewV7()).String()
 
-	if _, err := repo.Create(context.Background(), again); !errors.Is(err, ErrEmailTaken) {
+	if _, err := repo.Create(context.Background(), again, testVerification(again)); !errors.Is(err, ErrEmailTaken) {
 		t.Fatalf("error = %v, want ErrEmailTaken", err)
 	}
 }
@@ -85,7 +86,7 @@ func TestFindByEmailAndID(t *testing.T) {
 	u := newUser(t, repo)
 	ctx := context.Background()
 
-	if _, err := repo.Create(ctx, u); err != nil {
+	if _, err := repo.Create(ctx, u, testVerification(u)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -112,7 +113,7 @@ func TestUpdateProfile(t *testing.T) {
 	u := newUser(t, repo)
 	ctx := context.Background()
 
-	created, err := repo.Create(ctx, u)
+	created, err := repo.Create(ctx, u, testVerification(u))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,12 +140,12 @@ func TestRefreshTokenLifecycle(t *testing.T) {
 	u := newUser(t, repo)
 	ctx := context.Background()
 
-	if _, err := repo.Create(ctx, u); err != nil {
+	if _, err := repo.Create(ctx, u, testVerification(u)); err != nil {
 		t.Fatal(err)
 	}
 
 	family := uuid.NewString()
-	_, hash, err := newRefreshToken()
+	_, hash, err := newSecret()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +185,7 @@ func TestUpdatePasswordAndRevokeAllSessions(t *testing.T) {
 	u := newUser(t, repo)
 	ctx := context.Background()
 
-	if _, err := repo.Create(ctx, u); err != nil {
+	if _, err := repo.Create(ctx, u, testVerification(u)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -200,7 +201,7 @@ func TestUpdatePasswordAndRevokeAllSessions(t *testing.T) {
 
 	hashes := make([][]byte, 2)
 	for i := range hashes {
-		_, hashes[i], _ = newRefreshToken()
+		_, hashes[i], _ = newSecret()
 		if err := repo.CreateRefreshToken(ctx, RefreshToken{UserID: u.ID, FamilyID: uuid.NewString(), TokenHash: hashes[i], ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
 			t.Fatal(err)
 		}
@@ -213,5 +214,44 @@ func TestUpdatePasswordAndRevokeAllSessions(t *testing.T) {
 		if got, _ := repo.FindRefreshToken(ctx, h); got.RevokedAt == nil {
 			t.Errorf("token of family %s not revoked", got.FamilyID)
 		}
+	}
+}
+
+// testVerification returns a confirmation link token for u.
+func testVerification(u User) EmailToken {
+	_, hash, _ := newSecret()
+	return EmailToken{UserID: u.ID, Purpose: PurposeVerifyEmail, Email: u.Email, TokenHash: hash, ExpiresAt: time.Now().Add(time.Hour)}
+}
+
+func TestCreateWritesTheLinkAndTheEmailWithTheAccount(t *testing.T) {
+	repo := newTestRepo(t)
+	u := newUser(t, repo)
+	ctx := context.Background()
+
+	msg, err := outbox.NewEmail(outbox.Email{To: u.Email, Subject: "it", Text: "it"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.Create(ctx, u, testVerification(u), msg); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { repo.db.ExecContext(ctx, `DELETE FROM outbox WHERE payload LIKE @p1`, "%"+u.Email+"%") })
+
+	var tokens, messages int
+	repo.db.GetContext(ctx, &tokens, `SELECT COUNT(*) FROM email_tokens WHERE user_id = @p1`, u.ID)
+	repo.db.GetContext(ctx, &messages, `SELECT COUNT(*) FROM outbox WHERE payload LIKE @p1`, "%"+u.Email+"%")
+	if tokens != 1 || messages != 1 {
+		t.Errorf("tokens %d, messages %d; want 1 and 1", tokens, messages)
+	}
+
+	// A refused account leaves neither behind.
+	again := u
+	again.ID = uuid.Must(uuid.NewV7()).String()
+	if _, err := repo.Create(ctx, again, testVerification(again), msg); !errors.Is(err, ErrEmailTaken) {
+		t.Fatalf("error = %v, want ErrEmailTaken", err)
+	}
+	repo.db.GetContext(ctx, &messages, `SELECT COUNT(*) FROM outbox WHERE payload LIKE @p1`, "%"+u.Email+"%")
+	if messages != 1 {
+		t.Errorf("messages = %d after a refused account, want still 1", messages)
 	}
 }

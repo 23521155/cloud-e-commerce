@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -29,6 +30,14 @@ type Config struct {
 	// RefreshTokenTTL is how long a signed-in device stays signed in
 	// without being used.
 	RefreshTokenTTL time.Duration
+
+	// WebURL is the web app's public address, for the links in emails.
+	WebURL string
+
+	// StorageConnectionString is the Azure Storage account whose queues
+	// carry the outbox messages (Azurite locally). Empty: messages wait in
+	// the outbox table.
+	StorageConnectionString string
 }
 
 // Load reads environment variables (via a .env file) into a Config.
@@ -50,6 +59,10 @@ func Load() (*Config, error) {
 		JWTSecret: os.Getenv("JWT_SECRET"),
 
 		JWTIssuer: os.Getenv("JWT_ISSUER"),
+
+		WebURL: strings.TrimRight(getEnv("WEB_URL", "http://localhost:3000"), "/"),
+
+		StorageConnectionString: os.Getenv("STORAGE_CONNECTION_STRING"),
 	}
 
 	ttl, err := time.ParseDuration(getEnv("JWT_ACCESS_TTL", "15m"))

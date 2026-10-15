@@ -12,6 +12,7 @@ import (
 	"github.com/fizzisme/user-service/internal/config"
 	"github.com/fizzisme/user-service/internal/database"
 	"github.com/fizzisme/user-service/internal/logger"
+	"github.com/fizzisme/user-service/internal/outbox"
 	"github.com/fizzisme/user-service/internal/router"
 	"github.com/fizzisme/user-service/internal/token"
 	"github.com/fizzisme/user-service/internal/user"
@@ -64,7 +65,28 @@ func main() {
 		)
 	}
 
-	userHandler := user.NewHandler(user.NewService(user.NewRepository(db), tokens, cfg.RefreshTokenTTL), logger.Log)
+	userHandler := user.NewHandler(user.NewService(user.NewRepository(db), tokens, user.Options{
+		RefreshTTL: cfg.RefreshTokenTTL,
+		WebURL:     cfg.WebURL,
+	}), logger.Log)
+
+	// Emails and events wait in the outbox table until a relay puts them on
+	// their queues. Stopped with the server.
+	relayCtx, stopRelay := context.WithCancel(context.Background())
+	defer stopRelay()
+
+	if cfg.StorageConnectionString == "" {
+		logger.Log.Warn("STORAGE_CONNECTION_STRING is not set: outbox messages are kept but not sent")
+	} else {
+		sender, err := outbox.NewQueueSender(cfg.StorageConnectionString)
+		if err != nil {
+			logger.Log.Fatal(
+				"invalid STORAGE_CONNECTION_STRING",
+				zap.Error(err),
+			)
+		}
+		go outbox.NewRelay(outbox.NewStore(db), sender, logger.Log).Run(relayCtx)
+	}
 
 	r := router.SetupRouter(db, userHandler)
 
@@ -109,6 +131,8 @@ func main() {
 	<-quit
 
 	logger.Log.Info("Shutting down server...")
+
+	stopRelay()
 
 	// Allow in-flight requests up to 5 seconds to complete.
 	ctx, cancel := context.WithTimeout(

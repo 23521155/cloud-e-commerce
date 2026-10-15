@@ -55,8 +55,8 @@ type sessionStore interface {
 	RevokeAllSessions(ctx context.Context, userID string) error
 }
 
-// newRefreshToken returns a random token and its hash.
-func newRefreshToken() (string, []byte, error) {
+// newSecret returns a random token for a link or a cookie, and its hash.
+func newSecret() (string, []byte, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return "", nil, err
@@ -78,7 +78,7 @@ func (s *Service) issue(ctx context.Context, u User, familyID, device string) (T
 		return Tokens{}, err
 	}
 
-	raw, hash, err := newRefreshToken()
+	raw, hash, err := newSecret()
 	if err != nil {
 		return Tokens{}, err
 	}

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/fizzisme/user-service/internal/outbox"
 	"github.com/jmoiron/sqlx"
 	mssql "github.com/microsoft/go-mssqldb"
 )
@@ -42,12 +43,19 @@ func NewRepository(db *sqlx.DB) *Repository {
 	return &Repository{db: db}
 }
 
-// Create inserts u and returns the stored row, with the timestamps the
-// database set. A taken email gives ErrEmailTaken.
-func (r *Repository) Create(ctx context.Context, u User) (User, error) {
+// Create inserts u with the link that confirms its email, and the outbox
+// messages that send it, in one transaction. It returns the stored row,
+// with the timestamps the database set. A taken email gives ErrEmailTaken.
+func (r *Repository) Create(ctx context.Context, u User, verify EmailToken, messages ...outbox.Message) (User, error) {
+
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return User{}, err
+	}
+	defer tx.Rollback()
 
 	var created User
-	err := r.db.GetContext(ctx, &created, `
+	err = tx.GetContext(ctx, &created, `
 INSERT INTO users (id, email, password_hash, name, role)
 OUTPUT `+outputColumns("INSERTED")+`
 VALUES (@p1, @p2, @p3, @p4, @p5)`,
@@ -56,8 +64,31 @@ VALUES (@p1, @p2, @p3, @p4, @p5)`,
 	if isUniqueViolation(err) {
 		return User{}, ErrEmailTaken
 	}
+	if err != nil {
+		return User{}, err
+	}
 
-	return created, err
+	if err := insertEmailToken(ctx, tx, verify); err != nil {
+		return User{}, err
+	}
+	if err := outbox.Add(ctx, tx, messages...); err != nil {
+		return User{}, err
+	}
+
+	return created, tx.Commit()
+}
+
+func insertEmailToken(ctx context.Context, tx *sqlx.Tx, t EmailToken) error {
+	_, err := tx.ExecContext(ctx, `
+INSERT INTO email_tokens (user_id, purpose, email, token_hash, expires_at)
+VALUES (@user_id, @purpose, @email, @token_hash, @expires_at)`,
+		sql.Named("user_id", t.UserID),
+		sql.Named("purpose", t.Purpose),
+		sql.Named("email", t.Email),
+		sql.Named("token_hash", t.TokenHash),
+		sql.Named("expires_at", t.ExpiresAt.UTC()),
+	)
+	return err
 }
 
 // UpdateProfile sets the name and profile of the account with id and

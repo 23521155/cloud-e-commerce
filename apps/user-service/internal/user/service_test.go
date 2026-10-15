@@ -2,11 +2,13 @@ package user
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/fizzisme/user-service/internal/outbox"
 	"github.com/fizzisme/user-service/internal/token"
 	"github.com/google/uuid"
 )
@@ -14,11 +16,16 @@ import (
 // testRefreshTTL is the refresh token lifetime of test services.
 const testRefreshTTL = 720 * time.Hour
 
+var testOptions = Options{RefreshTTL: testRefreshTTL, WebURL: "http://shop.test"}
+
 // fakeStore keeps created users and refresh tokens in memory and refuses a
 // second account with the same email, as the unique key does.
 type fakeStore struct {
 	users map[string]User
 	err   error
+
+	emailTokens []EmailToken
+	outbox      []outbox.Message
 
 	refresh []*RefreshToken
 }
@@ -79,7 +86,7 @@ func (f *fakeStore) RevokeFamily(ctx context.Context, familyID string) error {
 	return nil
 }
 
-func (f *fakeStore) Create(ctx context.Context, u User) (User, error) {
+func (f *fakeStore) Create(ctx context.Context, u User, verify EmailToken, messages ...outbox.Message) (User, error) {
 	if f.err != nil {
 		return User{}, f.err
 	}
@@ -90,6 +97,8 @@ func (f *fakeStore) Create(ctx context.Context, u User) (User, error) {
 		return User{}, ErrEmailTaken
 	}
 	f.users[u.Email] = u
+	f.emailTokens = append(f.emailTokens, verify)
+	f.outbox = append(f.outbox, messages...)
 	return u, nil
 }
 
@@ -140,7 +149,7 @@ func (f *fakeIssuer) Issue(sub token.Subject) (token.Access, error) {
 func TestRegisterCreatesCustomer(t *testing.T) {
 
 	store := &fakeStore{}
-	svc := NewService(store, &fakeIssuer{}, testRefreshTTL)
+	svc := NewService(store, &fakeIssuer{}, testOptions)
 
 	u, err := svc.Register(context.Background(), RegisterInput{
 		Name:     "  Nguyễn Văn An ",
@@ -173,7 +182,7 @@ func TestRegisterCreatesCustomer(t *testing.T) {
 
 func TestRegisterRejectsTakenEmailWhateverTheCase(t *testing.T) {
 
-	svc := NewService(&fakeStore{}, &fakeIssuer{}, testRefreshTTL)
+	svc := NewService(&fakeStore{}, &fakeIssuer{}, testOptions)
 	ctx := context.Background()
 
 	if _, err := svc.Register(ctx, RegisterInput{Name: "A", Email: "reader@example.com", Password: "12345678"}); err != nil {
@@ -210,7 +219,7 @@ func TestRegisterValidates(t *testing.T) {
 			tt.edit(&in)
 
 			store := &fakeStore{}
-			_, err := NewService(store, &fakeIssuer{}, testRefreshTTL).Register(context.Background(), in)
+			_, err := NewService(store, &fakeIssuer{}, testOptions).Register(context.Background(), in)
 
 			if !errors.Is(err, ErrInvalidInput) {
 				t.Fatalf("error = %v, want ErrInvalidInput", err)
@@ -228,7 +237,7 @@ func TestRegisterValidates(t *testing.T) {
 func TestRegisterCountsPasswordInCharacters(t *testing.T) {
 
 	// Eight characters, but more than eight bytes.
-	_, err := NewService(&fakeStore{}, &fakeIssuer{}, testRefreshTTL).Register(context.Background(), RegisterInput{
+	_, err := NewService(&fakeStore{}, &fakeIssuer{}, testOptions).Register(context.Background(), RegisterInput{
 		Name: "Reader", Email: "reader@example.com", Password: "mậtkhẩuu",
 	})
 	if err != nil {
@@ -241,7 +250,7 @@ func registered(t *testing.T) (*Service, *fakeIssuer, User) {
 	t.Helper()
 
 	tokens := &fakeIssuer{}
-	svc := NewService(&fakeStore{}, tokens, testRefreshTTL)
+	svc := NewService(&fakeStore{}, tokens, testOptions)
 
 	u, err := svc.Register(context.Background(), RegisterInput{Name: "Reader", Email: "reader@example.com", Password: "right password"})
 	if err != nil {
@@ -347,5 +356,46 @@ func TestUpdateProfileUnknownAccount(t *testing.T) {
 
 	if _, err := svc.UpdateProfile(context.Background(), "no-such-id", "R", Profile{}); !errors.Is(err, ErrNotFound) {
 		t.Errorf("error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestRegisterSendsAConfirmationLink(t *testing.T) {
+
+	store := &fakeStore{}
+	svc := NewService(store, &fakeIssuer{}, testOptions)
+
+	u, err := svc.Register(context.Background(), RegisterInput{Name: "Reader", Email: "Reader@Example.com", Password: "12345678"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(store.emailTokens) != 1 || len(store.outbox) != 1 {
+		t.Fatalf("stored %d tokens and %d messages, want 1 and 1", len(store.emailTokens), len(store.outbox))
+	}
+	tok, msg := store.emailTokens[0], store.outbox[0]
+
+	if tok.UserID != u.ID || tok.Purpose != PurposeVerifyEmail || tok.Email != "reader@example.com" || len(tok.TokenHash) != 32 {
+		t.Errorf("token = %+v", tok)
+	}
+	if d := time.Until(tok.ExpiresAt); d < 23*time.Hour || d > 24*time.Hour {
+		t.Errorf("link works for %v, want 24h", d)
+	}
+
+	var mail outbox.Email
+	if err := json.Unmarshal([]byte(msg.Payload), &mail); err != nil {
+		t.Fatal(err)
+	}
+	if msg.Queue != outbox.QueueEmail || mail.To != "reader@example.com" {
+		t.Errorf("message = %+v to %q", msg, mail.To)
+	}
+
+	// The link carries the token whose hash is stored, and nothing else does.
+	i := strings.Index(mail.Text, "http://shop.test/verify-email?token=")
+	if i < 0 {
+		t.Fatalf("no link in %q", mail.Text)
+	}
+	raw := strings.Fields(mail.Text[i+len("http://shop.test/verify-email?token="):])[0]
+	if string(hashToken(raw)) != string(tok.TokenHash) {
+		t.Error("the link's token does not match the stored hash")
 	}
 }

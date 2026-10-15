@@ -13,7 +13,7 @@ func signedIn(t *testing.T) (*Service, *fakeStore, User, Tokens) {
 	t.Helper()
 
 	store := &fakeStore{}
-	svc := NewService(store, &fakeIssuer{}, testRefreshTTL)
+	svc := NewService(store, &fakeIssuer{}, testOptions)
 
 	ctx := context.Background()
 	if _, err := svc.Register(ctx, RegisterInput{Name: "Reader", Email: "reader@example.com", Password: "right password"}); err != nil {
