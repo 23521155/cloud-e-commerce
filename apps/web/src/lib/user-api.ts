@@ -44,3 +44,58 @@ export async function registerAccount(account: NewAccount): Promise<RegisterResu
 
   return { ok: false, reason: "failed" };
 }
+
+export type LoginResult =
+  | { ok: true; accessToken: string; expiresAt: string; account: Account }
+  /** The email or the password is wrong; which one is not told. */
+  | { ok: false; reason: "wrong" }
+  | { ok: false; reason: "busy" }
+  | { ok: false; reason: "failed" };
+
+/** POST /api/users/auth/login. */
+export async function login(email: string, password: string): Promise<LoginResult> {
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(await forwardedFor()) },
+      body: JSON.stringify({ email, password }),
+      cache: "no-store",
+    });
+  } catch {
+    return { ok: false, reason: "failed" };
+  }
+
+  if (res.ok) {
+    const body = (await res.json()) as { accessToken: string; expiresAt: string; user: Account };
+    return { ok: true, accessToken: body.accessToken, expiresAt: body.expiresAt, account: body.user };
+  }
+  if (res.status === 401) return { ok: false, reason: "wrong" };
+  if (res.status === 429) return { ok: false, reason: "busy" };
+
+  return { ok: false, reason: "failed" };
+}
+
+export type MeResult =
+  | { ok: true; account: Account }
+  /** The token was refused: expired, or the account is gone. */
+  | { ok: false; reason: "signed-out" }
+  | { ok: false; reason: "failed" };
+
+/** GET /api/users/me with the reader's access token. */
+export async function me(accessToken: string): Promise<MeResult> {
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/me`, {
+      headers: { Authorization: `Bearer ${accessToken}`, ...(await forwardedFor()) },
+      cache: "no-store",
+    });
+  } catch {
+    return { ok: false, reason: "failed" };
+  }
+
+  if (res.ok) return { ok: true, account: (await res.json()) as Account };
+  if (res.status === 401) return { ok: false, reason: "signed-out" };
+
+  return { ok: false, reason: "failed" };
+}

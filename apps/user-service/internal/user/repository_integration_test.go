@@ -78,3 +78,30 @@ func TestCreateRefusesDuplicateEmail(t *testing.T) {
 		t.Fatalf("error = %v, want ErrEmailTaken", err)
 	}
 }
+
+func TestFindByEmailAndID(t *testing.T) {
+	repo := newTestRepo(t)
+	u := newUser(t, repo)
+	ctx := context.Background()
+
+	if _, err := repo.Create(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+
+	byEmail, err := repo.FindByEmail(ctx, u.Email)
+	if err != nil || byEmail.ID != u.ID || byEmail.PasswordHash != u.PasswordHash {
+		t.Errorf("FindByEmail = %+v, %v", byEmail, err)
+	}
+
+	byID, err := repo.FindByID(ctx, u.ID)
+	if err != nil || byID.Email != u.Email {
+		t.Errorf("FindByID = %+v, %v", byID, err)
+	}
+
+	if _, err := repo.FindByEmail(ctx, "missing-"+u.Email); !errors.Is(err, ErrNotFound) {
+		t.Errorf("missing email error = %v, want ErrNotFound", err)
+	}
+	if _, err := repo.FindByID(ctx, "missing"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("missing id error = %v, want ErrNotFound", err)
+	}
+}

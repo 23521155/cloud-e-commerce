@@ -10,6 +10,9 @@ services:
       - ./configs/.env
     environment:
       USER_SERVICE: http://user-service:8085
+      # Shared with user-service, which signs the tokens; dev defaults only.
+      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret}
+      JWT_ISSUER: ${JWT_ISSUER:-fiurozz}
       CATALOG_SERVICE: http://catalog-service:8083
       ORDER_SERVICE: http://order-service:8084
       OTEL_ENDPOINT: jaeger:4317

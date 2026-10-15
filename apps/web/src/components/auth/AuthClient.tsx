@@ -1,8 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
-import { register, type RegisterState } from "@/lib/auth-actions";
+import { register, signIn, type AuthFormState } from "@/lib/auth-actions";
 
 /** Text input on the index card; required unless told otherwise. */
 export function TextField({ label, ...input }: { label: string } & React.InputHTMLAttributes<HTMLInputElement>) {
@@ -74,16 +75,49 @@ export function PasswordField({ label, name, autoComplete, hint, match, minLengt
   );
 }
 
-/** Register form: a refused attempt shows why and keeps the name and email, never the passwords. */
-export function RegisterForm() {
-  const [state, formAction] = useActionState<RegisterState, FormData>(register, {});
+function FormError({ error }: { error?: string }) {
+  if (!error) return null;
+  return (
+    <p role="alert" className="auth__error m-0">
+      {error}
+    </p>
+  );
+}
+
+/** Sign-in form: a refused attempt shows why and keeps the email. next is where to go once signed in. */
+export function SignInForm({ registered, next }: { registered: boolean; next?: string }) {
+  const [state, formAction] = useActionState<AuthFormState, FormData>(signIn, {});
   return (
     <form action={formAction} className="auth__form">
-      {state.error && (
-        <p role="alert" className="auth__error m-0">
-          {state.error}
+      {registered && !state.error && (
+        <p role="status" className="auth__sent m-0">
+          Your account is ready. Sign in to continue.
         </p>
       )}
+      <FormError error={state.error} />
+      {next && <input type="hidden" name="next" value={next} />}
+      <TextField label="Email" name="email" type="email" autoComplete="email" placeholder="you@example.com" defaultValue={state.email} />
+      <PasswordField
+        label="Password"
+        name="password"
+        autoComplete="current-password"
+        aside={
+          <Link href="/forgot-password" className="auth__aside under-hover">
+            Forgot?
+          </Link>
+        }
+      />
+      <SubmitButton pending="Signing in…">Sign in</SubmitButton>
+    </form>
+  );
+}
+
+/** Register form: a refused attempt shows why and keeps the name and email, never the passwords. */
+export function RegisterForm() {
+  const [state, formAction] = useActionState<AuthFormState, FormData>(register, {});
+  return (
+    <form action={formAction} className="auth__form">
+      <FormError error={state.error} />
       <TextField label="Name" name="name" autoComplete="name" defaultValue={state.name} />
       <TextField label="Email" name="email" type="email" autoComplete="email" placeholder="you@example.com" defaultValue={state.email} />
       <PasswordField label="Password" name="password" autoComplete="new-password" minLength={8} hint="At least 8 characters." />

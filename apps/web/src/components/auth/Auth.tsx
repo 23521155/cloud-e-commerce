@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { PasswordField, RegisterForm, SubmitButton, TextField } from "@/components/auth/AuthClient";
+import { RegisterForm, SignInForm, SubmitButton, TextField } from "@/components/auth/AuthClient";
 import { BookCover } from "@/components/ui/BookArt";
-import { continueWithGoogle, requestReset, signIn } from "@/lib/auth-actions";
+import { continueWithGoogle, requestReset } from "@/lib/auth-actions";
 
 export type AuthMode = "sign-in" | "register" | "forgot";
 
@@ -29,28 +29,10 @@ function Divider() {
   );
 }
 
-function SignInForm({ registered }: { registered: boolean }) {
+function SignIn({ registered, next }: { registered: boolean; next?: string }) {
   return (
     <>
-      <form action={signIn} className="auth__form">
-        {registered && (
-          <p role="status" className="auth__sent m-0">
-            Your account is ready. Sign in to continue.
-          </p>
-        )}
-        <TextField label="Email" name="email" type="email" autoComplete="email" placeholder="you@example.com" />
-        <PasswordField
-          label="Password"
-          name="password"
-          autoComplete="current-password"
-          aside={
-            <Link href="/forgot-password" className="auth__aside under-hover">
-              Forgot?
-            </Link>
-          }
-        />
-        <SubmitButton pending="Signing in…">Sign in</SubmitButton>
-      </form>
+      <SignInForm registered={registered} next={next} />
       <Divider />
       <GoogleButton label="Continue with Google" />
     </>
@@ -93,7 +75,7 @@ const SHELF = [
 ];
 
 /** Every auth screen: heading and a few books on the left, the form on an index card on the right. */
-export function AuthPage({ mode, sent = false, registered = false }: { mode: AuthMode; sent?: boolean; registered?: boolean }) {
+export function AuthPage({ mode, sent = false, registered = false, next }: { mode: AuthMode; sent?: boolean; registered?: boolean; next?: string }) {
   const copy = COPY[mode];
   const sw = SWITCH[mode];
   return (
@@ -124,7 +106,7 @@ export function AuthPage({ mode, sent = false, registered = false }: { mode: Aut
             <span>Marginalleya</span>
           </div>
           <div className="auth__body">
-            {mode === "sign-in" && <SignInForm registered={registered} />}
+            {mode === "sign-in" && <SignIn registered={registered} next={next} />}
             {mode === "register" && <RegisterForm />}
             {mode === "forgot" && <ForgotForm sent={sent} />}
             <p className="auth__switch">

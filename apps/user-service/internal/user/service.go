@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"net/mail"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
+	"github.com/fizzisme/user-service/internal/token"
 	"github.com/google/uuid"
 )
 
@@ -18,6 +20,13 @@ var (
 
 	// ErrEmailTaken means another account already uses the email.
 	ErrEmailTaken = errors.New("email already registered")
+
+	// ErrInvalidCredentials means the email or the password is wrong. Which
+	// one is never told, so the answer cannot be used to find accounts.
+	ErrInvalidCredentials = errors.New("invalid email or password")
+
+	// ErrNotFound means no account has the id or email.
+	ErrNotFound = errors.New("user not found")
 )
 
 // Field limits, matched by the columns in migrations/000001_create_users.
@@ -35,14 +44,22 @@ const (
 // with a fake.
 type store interface {
 	Create(ctx context.Context, u User) (User, error)
+	FindByEmail(ctx context.Context, email string) (User, error)
+	FindByID(ctx context.Context, id string) (User, error)
+}
+
+// issuer signs access tokens; *token.Issuer outside tests.
+type issuer interface {
+	Issue(sub token.Subject) (token.Access, error)
 }
 
 type Service struct {
-	store store
+	store  store
+	tokens issuer
 }
 
-func NewService(store store) *Service {
-	return &Service{store: store}
+func NewService(store store, tokens issuer) *Service {
+	return &Service{store: store, tokens: tokens}
 }
 
 // RegisterInput is a new account as the user typed it.
@@ -88,6 +105,52 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (User, error) 
 		Role:         RoleCustomer,
 	})
 }
+
+// Login checks an email and password and signs an access token for the
+// account. A wrong email and a wrong password give the same error.
+func (s *Service) Login(ctx context.Context, email, password string) (User, token.Access, error) {
+
+	u, err := s.store.FindByEmail(ctx, normalizeEmail(email))
+	if errors.Is(err, ErrNotFound) {
+		// Hash anyway, so an unknown email takes as long to refuse as a
+		// wrong password and timing does not reveal which accounts exist.
+		verifyPassword(password, dummyHash())
+		return User{}, token.Access{}, ErrInvalidCredentials
+	}
+	if err != nil {
+		return User{}, token.Access{}, err
+	}
+
+	ok, err := verifyPassword(password, u.PasswordHash)
+	if err != nil {
+		return User{}, token.Access{}, err
+	}
+	if !ok {
+		return User{}, token.Access{}, ErrInvalidCredentials
+	}
+
+	access, err := s.tokens.Issue(token.Subject{ID: u.ID, Email: u.Email, Name: u.Name, Roles: []string{u.Role}})
+	if err != nil {
+		return User{}, token.Access{}, err
+	}
+
+	return u, access, nil
+}
+
+// Me returns the account an access token was issued for.
+func (s *Service) Me(ctx context.Context, id string) (User, error) {
+	return s.store.FindByID(ctx, id)
+}
+
+// dummyHash is a hash of a random password with the current cost, for
+// Login to check against when the email has no account.
+var dummyHash = sync.OnceValue(func() string {
+	hash, err := hashPassword(uuid.NewString())
+	if err != nil {
+		panic(err)
+	}
+	return hash
+})
 
 // normalizeEmail makes one address match however it was typed. Only case
 // and surrounding spaces are folded; dots and +tags are kept.

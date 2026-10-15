@@ -1,7 +1,9 @@
 package config
 
 import (
+	"fmt"
 	"os"
+	"time"
 
 	"github.com/joho/godotenv"
 )
@@ -15,6 +17,14 @@ type Config struct {
 
 	// DatabaseURL is a sqlserver:// URL, also used by golang-migrate.
 	DatabaseURL string
+
+	// JWTSecret and JWTIssuer must equal the gateway's: it verifies the
+	// access tokens this service signs.
+	JWTSecret string
+	JWTIssuer string
+
+	// AccessTokenTTL is how long an access token is accepted.
+	AccessTokenTTL time.Duration
 }
 
 // Load reads environment variables (via a .env file) into a Config.
@@ -32,7 +42,17 @@ func Load() (*Config, error) {
 		Port: getEnv("PORT", "8085"),
 
 		DatabaseURL: os.Getenv("DATABASE_URL"),
+
+		JWTSecret: os.Getenv("JWT_SECRET"),
+
+		JWTIssuer: os.Getenv("JWT_ISSUER"),
 	}
+
+	ttl, err := time.ParseDuration(getEnv("JWT_ACCESS_TTL", "15m"))
+	if err != nil {
+		return nil, fmt.Errorf("JWT_ACCESS_TTL: %w", err)
+	}
+	cfg.AccessTokenTTL = ttl
 
 	return cfg, nil
 }

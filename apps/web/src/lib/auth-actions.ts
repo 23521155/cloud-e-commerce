@@ -1,12 +1,13 @@
 "use server";
 
-// Sign-in, Google and password reset are still mock: each only redirects so the flow can be walked
+// Google sign-in and password reset are still mock: each only redirects so the flow can be walked
 // through. Credentials arrive in the POST body and are never stored, logged or put in a URL.
 import { redirect } from "next/navigation";
-import { registerAccount } from "@/lib/user-api";
+import { endSession, startSession } from "@/lib/session";
+import { login, registerAccount } from "@/lib/user-api";
 
-/** What the register form shows after a refused attempt, with the values to type in again. */
-export type RegisterState = {
+/** What an auth form shows after a refused attempt, with the values to type in again. */
+export type AuthFormState = {
   error?: string;
   name?: string;
   email?: string;
@@ -14,11 +15,32 @@ export type RegisterState = {
 
 const text = (formData: FormData, name: string) => String(formData.get(name) ?? "").trim();
 
-export async function signIn() {
-  redirect("/");
+/** Only a path on this site, so the sign-in form cannot be used to send readers elsewhere. */
+function localPath(value: FormDataEntryValue | null): string {
+  const path = String(value ?? "");
+  return path.startsWith("/") && !path.startsWith("//") && !path.startsWith("/\\") ? path : "/";
 }
 
-export async function register(_prev: RegisterState, formData: FormData): Promise<RegisterState> {
+export async function signIn(_prev: AuthFormState, formData: FormData): Promise<AuthFormState> {
+  const email = text(formData, "email");
+  const result = await login(email, String(formData.get("password") ?? ""));
+
+  if (result.ok) {
+    await startSession(result.accessToken, result.expiresAt);
+    redirect(localPath(formData.get("next")));
+  }
+
+  switch (result.reason) {
+    case "wrong":
+      return { email, error: "The email or password is incorrect." };
+    case "busy":
+      return { email, error: "Too many attempts. Please wait a minute and try again." };
+    default:
+      return { email, error: "You could not be signed in right now. Please try again." };
+  }
+}
+
+export async function register(_prev: AuthFormState, formData: FormData): Promise<AuthFormState> {
   const name = text(formData, "name");
   const email = text(formData, "email");
   // Passwords are sent as typed: spaces are part of a password.
@@ -29,7 +51,13 @@ export async function register(_prev: RegisterState, formData: FormData): Promis
   if (password !== String(formData.get("confirm") ?? "")) return { ...keep, error: "The passwords do not match." };
 
   const result = await registerAccount({ name, email, password });
-  if (result.ok) redirect("/sign-in?registered=1");
+  if (result.ok) {
+    // Signed in straight away; if that fails the account still exists, so send them to sign in.
+    const signedIn = await login(email, password);
+    if (!signedIn.ok) redirect("/sign-in?registered=1");
+    await startSession(signedIn.accessToken, signedIn.expiresAt);
+    redirect("/");
+  }
 
   switch (result.reason) {
     case "taken":
@@ -42,6 +70,11 @@ export async function register(_prev: RegisterState, formData: FormData): Promis
     default:
       return { ...keep, error: "The account could not be created right now. Please try again." };
   }
+}
+
+export async function signOut() {
+  await endSession();
+  redirect("/");
 }
 
 export async function continueWithGoogle() {

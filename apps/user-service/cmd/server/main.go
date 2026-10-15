@@ -13,6 +13,7 @@ import (
 	"github.com/fizzisme/user-service/internal/database"
 	"github.com/fizzisme/user-service/internal/logger"
 	"github.com/fizzisme/user-service/internal/router"
+	"github.com/fizzisme/user-service/internal/token"
 	"github.com/fizzisme/user-service/internal/user"
 	"go.uber.org/zap"
 )
@@ -54,7 +55,16 @@ func main() {
 		zap.String("port", cfg.Port),
 	)
 
-	userHandler := user.NewHandler(user.NewService(user.NewRepository(db)), logger.Log)
+	// Without the gateway's secret no one could sign in, so do not start.
+	tokens, err := token.NewIssuer(cfg.JWTSecret, cfg.JWTIssuer, cfg.AccessTokenTTL)
+	if err != nil {
+		logger.Log.Fatal(
+			"cannot sign access tokens",
+			zap.Error(err),
+		)
+	}
+
+	userHandler := user.NewHandler(user.NewService(user.NewRepository(db), tokens), logger.Log)
 
 	r := router.SetupRouter(db, userHandler)
 

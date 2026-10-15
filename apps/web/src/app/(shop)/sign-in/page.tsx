@@ -11,7 +11,7 @@ export default async function SignInPage({ searchParams }: PageProps<"/sign-in">
   return (
     <>
       <MotionController />
-      <AuthPage mode="sign-in" registered={sp.registered === "1"} />
+      <AuthPage mode="sign-in" registered={sp.registered === "1"} next={typeof sp.next === "string" ? sp.next : undefined} />
     </>
   );
 }

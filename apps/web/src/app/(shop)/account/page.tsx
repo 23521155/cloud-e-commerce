@@ -1,25 +1,36 @@
 import type { Metadata } from "next";
-import { Account, type Profile, type SavedNotice } from "@/components/account/Account";import { MotionController } from "@/components/motion/MotionController";
+import { redirect } from "next/navigation";
+import { Account, type Profile, type SavedNotice } from "@/components/account/Account";
+import { MotionController } from "@/components/motion/MotionController";
+import { getSession } from "@/lib/session";
+import { me } from "@/lib/user-api";
 
 export const metadata: Metadata = {
   title: "Your account — Marginalleya",
   description: "Update your personal details, delivery address and password.",
 };
 
-// Mock signed-in reader until auth and the User model exist
-const PROFILE: Profile = {
-  name: "Nguyen Van An",
-  email: "an.nguyen@example.com",
-  phone: "",
-  address: "",
-  city: "Ho Chi Minh City",
-  postal: "",
-  country: "Vietnam",
-};
-
 export default async function AccountPage({ searchParams }: PageProps<"/account">) {
   const sp = await searchParams;
   const saved: SavedNotice | undefined = sp.saved === "profile" || sp.saved === "password" ? sp.saved : undefined;
+
+  const session = await getSession();
+  if (!session) redirect("/sign-in?next=/account");
+
+  const result = await me(session.token);
+  if (!result.ok && result.reason === "signed-out") redirect("/sign-in?next=/account");
+  if (!result.ok) throw new Error("Your account could not be loaded right now.");
+
+  // The delivery address is not kept by the user service yet.
+  const profile: Profile = {
+    name: result.account.name,
+    email: result.account.email,
+    phone: "",
+    address: "",
+    city: "",
+    postal: "",
+    country: "Vietnam",
+  };
 
   return (
     <>
@@ -40,7 +51,7 @@ export default async function AccountPage({ searchParams }: PageProps<"/account"
           </p>
         </div>
 
-        <Account profile={PROFILE} saved={saved} />
+        <Account profile={profile} saved={saved} />
       </section>
     </>
   );

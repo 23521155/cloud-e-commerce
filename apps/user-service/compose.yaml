@@ -69,6 +69,10 @@ services:
       PORT: "8085"
       GIN_MODE: release
       DATABASE_URL: *users-database-url
+      # Same values as the gateway, which verifies the tokens; dev defaults only.
+      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret}
+      JWT_ISSUER: ${JWT_ISSUER:-fiurozz}
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
     ports:
       - "${USER_PORT:-8085}:8085"
     healthcheck:
