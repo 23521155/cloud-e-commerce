@@ -3,7 +3,7 @@
 // Password change is still mock: it only redirects back with a notice. Form data stays in the POST
 // body; nothing is stored or logged.
 import { redirect } from "next/navigation";
-import { getSession } from "@/lib/session";
+import { getSession, renewSession } from "@/lib/session";
 import { updateProfile as saveProfile } from "@/lib/user-api";
 
 const text = (formData: FormData, name: string) => String(formData.get(name) ?? "").trim();
@@ -22,7 +22,11 @@ export async function updateProfile(formData: FormData) {
     country: text(formData, "country"),
   });
 
-  if (result.ok) redirect("/account?saved=profile");
+  if (result.ok) {
+    // The header shows the name from the access token: get one with the new name.
+    await renewSession();
+    redirect("/account?saved=profile");
+  }
   if (result.reason === "signed-out") redirect("/sign-in?next=/account");
   redirect(`/account?error=${result.reason === "invalid" ? "profile-invalid" : "profile-failed"}`);
 }

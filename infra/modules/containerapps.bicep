@@ -354,6 +354,7 @@ resource user 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'JWT_SECRET', secretRef: 'jwt-secret' }
             { name: 'JWT_ISSUER', value: prefix }
             { name: 'JWT_ACCESS_TTL', value: '15m' }
+            { name: 'JWT_REFRESH_TTL', value: '720h' } // a device stays signed in 30 days without use
           ]
         }
       ]

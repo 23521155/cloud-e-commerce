@@ -1,6 +1,6 @@
 // Account client for user-service, reached through the API gateway.
 // Server-side only: the gateway URL is read on the server and never sent to the browser.
-import { forwardedFor, GATEWAY_URL } from "@/lib/gateway";
+import { forwardedFor, GATEWAY_URL, visitorHeaders } from "@/lib/gateway";
 
 const BASE = `${GATEWAY_URL}/api/users`;
 
@@ -48,8 +48,20 @@ export async function registerAccount(account: NewAccount): Promise<RegisterResu
   return { ok: false, reason: "failed" };
 }
 
+/** What signing in or refreshing gives: an access token, and the refresh token that gets the next one. */
+export type SessionTokens = { accessToken: string; expiresAt: string; refreshToken: string; refreshExpiresAt: string };
+
+type TokensBody = SessionTokens & { user: Account };
+
+const tokensOf = ({ accessToken, expiresAt, refreshToken, refreshExpiresAt }: TokensBody): SessionTokens => ({
+  accessToken,
+  expiresAt,
+  refreshToken,
+  refreshExpiresAt,
+});
+
 export type LoginResult =
-  | { ok: true; accessToken: string; expiresAt: string; account: Account }
+  | { ok: true; tokens: SessionTokens; account: Account }
   /** The email or the password is wrong; which one is not told. */
   | { ok: false; reason: "wrong" }
   | { ok: false; reason: "busy" }
@@ -61,7 +73,7 @@ export async function login(email: string, password: string): Promise<LoginResul
   try {
     res = await fetch(`${BASE}/auth/login`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...(await forwardedFor()) },
+      headers: { "Content-Type": "application/json", ...(await visitorHeaders()) },
       body: JSON.stringify({ email, password }),
       cache: "no-store",
     });
@@ -70,8 +82,8 @@ export async function login(email: string, password: string): Promise<LoginResul
   }
 
   if (res.ok) {
-    const body = (await res.json()) as { accessToken: string; expiresAt: string; user: Account };
-    return { ok: true, accessToken: body.accessToken, expiresAt: body.expiresAt, account: body.user };
+    const body = (await res.json()) as TokensBody;
+    return { ok: true, tokens: tokensOf(body), account: body.user };
   }
   if (res.status === 401) return { ok: false, reason: "wrong" };
   if (res.status === 429) return { ok: false, reason: "busy" };
@@ -132,4 +144,47 @@ export async function updateProfile(accessToken: string, profile: { name: string
   }
 
   return { ok: false, reason: "failed" };
+}
+
+export type RefreshResult =
+  | { ok: true; tokens: SessionTokens }
+  /** The refresh token was refused: expired, signed out, or reused. */
+  | { ok: false; reason: "signed-out" }
+  | { ok: false; reason: "failed" };
+
+/**
+ * POST /api/users/auth/refresh: new tokens for the same session. visitor are the browsing
+ * reader's headers (see visitorHeadersFrom), passed in so Proxy can call this.
+ */
+export async function refreshSession(refreshToken: string, visitor: Record<string, string>): Promise<RefreshResult> {
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...visitor },
+      body: JSON.stringify({ refreshToken }),
+      cache: "no-store",
+    });
+  } catch {
+    return { ok: false, reason: "failed" };
+  }
+
+  if (res.ok) return { ok: true, tokens: tokensOf((await res.json()) as TokensBody) };
+  if (res.status === 401) return { ok: false, reason: "signed-out" };
+
+  return { ok: false, reason: "failed" };
+}
+
+/** POST /api/users/auth/logout: ends the session on the user service. Best effort. */
+export async function logout(refreshToken: string): Promise<void> {
+  try {
+    await fetch(`${BASE}/auth/logout`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(await forwardedFor()) },
+      body: JSON.stringify({ refreshToken }),
+      cache: "no-store",
+    });
+  } catch {
+    // The cookies are cleared anyway; the session then just runs out.
+  }
 }

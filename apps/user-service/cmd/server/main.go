@@ -64,7 +64,7 @@ func main() {
 		)
 	}
 
-	userHandler := user.NewHandler(user.NewService(user.NewRepository(db), tokens), logger.Log)
+	userHandler := user.NewHandler(user.NewService(user.NewRepository(db), tokens, cfg.RefreshTokenTTL), logger.Log)
 
 	r := router.SetupRouter(db, userHandler)
 

@@ -5,16 +5,57 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/fizzisme/user-service/internal/token"
 	"github.com/google/uuid"
 )
 
-// fakeStore keeps created users in memory and refuses a second account
-// with the same email, as the unique key does.
+// testRefreshTTL is the refresh token lifetime of test services.
+const testRefreshTTL = 720 * time.Hour
+
+// fakeStore keeps created users and refresh tokens in memory and refuses a
+// second account with the same email, as the unique key does.
 type fakeStore struct {
 	users map[string]User
 	err   error
+
+	refresh []*RefreshToken
+}
+
+func (f *fakeStore) CreateRefreshToken(ctx context.Context, t RefreshToken) error {
+	t.ID = int64(len(f.refresh) + 1)
+	f.refresh = append(f.refresh, &t)
+	return nil
+}
+
+func (f *fakeStore) FindRefreshToken(ctx context.Context, hash []byte) (RefreshToken, error) {
+	for _, t := range f.refresh {
+		if string(t.TokenHash) == string(hash) {
+			return *t, nil
+		}
+	}
+	return RefreshToken{}, ErrNotFound
+}
+
+func (f *fakeStore) MarkRefreshTokenUsed(ctx context.Context, id int64) (bool, error) {
+	t := f.refresh[id-1]
+	if t.UsedAt != nil {
+		return false, nil
+	}
+	now := time.Now()
+	t.UsedAt = &now
+	return true, nil
+}
+
+func (f *fakeStore) RevokeFamily(ctx context.Context, familyID string) error {
+	now := time.Now()
+	for _, t := range f.refresh {
+		if t.FamilyID == familyID && t.RevokedAt == nil {
+			t.RevokedAt = &now
+		}
+	}
+	return nil
 }
 
 func (f *fakeStore) Create(ctx context.Context, u User) (User, error) {
@@ -67,17 +108,18 @@ type fakeIssuer struct {
 	gotID    string
 	gotEmail string
 	gotRoles []string
+	gotName  string
 }
 
 func (f *fakeIssuer) Issue(sub token.Subject) (token.Access, error) {
-	f.gotID, f.gotEmail, f.gotRoles = sub.ID, sub.Email, sub.Roles
+	f.gotID, f.gotEmail, f.gotRoles, f.gotName = sub.ID, sub.Email, sub.Roles, sub.Name
 	return token.Access{Token: "token-for-" + sub.ID}, nil
 }
 
 func TestRegisterCreatesCustomer(t *testing.T) {
 
 	store := &fakeStore{}
-	svc := NewService(store, &fakeIssuer{})
+	svc := NewService(store, &fakeIssuer{}, testRefreshTTL)
 
 	u, err := svc.Register(context.Background(), RegisterInput{
 		Name:     "  Nguyễn Văn An ",
@@ -110,7 +152,7 @@ func TestRegisterCreatesCustomer(t *testing.T) {
 
 func TestRegisterRejectsTakenEmailWhateverTheCase(t *testing.T) {
 
-	svc := NewService(&fakeStore{}, &fakeIssuer{})
+	svc := NewService(&fakeStore{}, &fakeIssuer{}, testRefreshTTL)
 	ctx := context.Background()
 
 	if _, err := svc.Register(ctx, RegisterInput{Name: "A", Email: "reader@example.com", Password: "12345678"}); err != nil {
@@ -147,7 +189,7 @@ func TestRegisterValidates(t *testing.T) {
 			tt.edit(&in)
 
 			store := &fakeStore{}
-			_, err := NewService(store, &fakeIssuer{}).Register(context.Background(), in)
+			_, err := NewService(store, &fakeIssuer{}, testRefreshTTL).Register(context.Background(), in)
 
 			if !errors.Is(err, ErrInvalidInput) {
 				t.Fatalf("error = %v, want ErrInvalidInput", err)
@@ -165,7 +207,7 @@ func TestRegisterValidates(t *testing.T) {
 func TestRegisterCountsPasswordInCharacters(t *testing.T) {
 
 	// Eight characters, but more than eight bytes.
-	_, err := NewService(&fakeStore{}, &fakeIssuer{}).Register(context.Background(), RegisterInput{
+	_, err := NewService(&fakeStore{}, &fakeIssuer{}, testRefreshTTL).Register(context.Background(), RegisterInput{
 		Name: "Reader", Email: "reader@example.com", Password: "mậtkhẩuu",
 	})
 	if err != nil {
@@ -178,7 +220,7 @@ func registered(t *testing.T) (*Service, *fakeIssuer, User) {
 	t.Helper()
 
 	tokens := &fakeIssuer{}
-	svc := NewService(&fakeStore{}, tokens)
+	svc := NewService(&fakeStore{}, tokens, testRefreshTTL)
 
 	u, err := svc.Register(context.Background(), RegisterInput{Name: "Reader", Email: "reader@example.com", Password: "right password"})
 	if err != nil {
@@ -192,13 +234,13 @@ func TestLoginIssuesTokenForTheAccount(t *testing.T) {
 	svc, tokens, want := registered(t)
 
 	// The email is matched however it is typed.
-	u, access, err := svc.Login(context.Background(), " Reader@Example.com", "right password")
+	u, tokens2, err := svc.Login(context.Background(), " Reader@Example.com", "right password", "Firefox on Windows")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if u.ID != want.ID || access.Token != "token-for-"+want.ID {
-		t.Errorf("logged in as %q with %q", u.ID, access.Token)
+	if u.ID != want.ID || tokens2.Access.Token != "token-for-"+want.ID || tokens2.Refresh == "" {
+		t.Errorf("logged in as %q with %+v", u.ID, tokens2)
 	}
 	if tokens.gotEmail != "reader@example.com" || len(tokens.gotRoles) != 1 || tokens.gotRoles[0] != RoleCustomer {
 		t.Errorf("token asked for %q %v", tokens.gotEmail, tokens.gotRoles)
@@ -213,7 +255,7 @@ func TestLoginRefusesWithOneErrorForBothMistakes(t *testing.T) {
 		{"reader@example.com", "wrong password"},
 		{"nobody@example.com", "right password"},
 	} {
-		_, _, err := svc.Login(context.Background(), tc.email, tc.password)
+		_, _, err := svc.Login(context.Background(), tc.email, tc.password, "")
 		if !errors.Is(err, ErrInvalidCredentials) {
 			t.Errorf("Login(%q) error = %v, want ErrInvalidCredentials", tc.email, err)
 		}

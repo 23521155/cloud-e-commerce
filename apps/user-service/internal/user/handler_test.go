@@ -19,7 +19,7 @@ import (
 // fakeAccounts returns what the test set and records the input it got.
 type fakeAccounts struct {
 	user   User
-	access token.Access
+	tokens Tokens
 	err    error
 
 	got      RegisterInput
@@ -29,6 +29,9 @@ type fakeAccounts struct {
 
 	gotName    string
 	gotProfile Profile
+
+	gotDevice  string
+	gotRefresh string
 }
 
 func (f *fakeAccounts) Register(ctx context.Context, in RegisterInput) (User, error) {
@@ -36,9 +39,19 @@ func (f *fakeAccounts) Register(ctx context.Context, in RegisterInput) (User, er
 	return f.user, f.err
 }
 
-func (f *fakeAccounts) Login(ctx context.Context, email, password string) (User, token.Access, error) {
-	f.gotEmail, f.gotPass = email, password
-	return f.user, f.access, f.err
+func (f *fakeAccounts) Login(ctx context.Context, email, password, device string) (User, Tokens, error) {
+	f.gotEmail, f.gotPass, f.gotDevice = email, password, device
+	return f.user, f.tokens, f.err
+}
+
+func (f *fakeAccounts) Refresh(ctx context.Context, refreshToken, device string) (User, Tokens, error) {
+	f.gotRefresh, f.gotDevice = refreshToken, device
+	return f.user, f.tokens, f.err
+}
+
+func (f *fakeAccounts) Logout(ctx context.Context, refreshToken string) error {
+	f.gotRefresh = refreshToken
+	return f.err
 }
 
 func (f *fakeAccounts) Me(ctx context.Context, id string) (User, error) {
@@ -168,30 +181,31 @@ func TestLoginReturnsToken(t *testing.T) {
 	expires := time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
 	svc := &fakeAccounts{
 		user:   User{ID: "u1", Email: "reader@example.com", Name: "Reader", Role: RoleCustomer, PasswordHash: "$argon2id$secret"},
-		access: token.Access{Token: "signed.jwt.token", ExpiresAt: expires},
+		tokens: Tokens{Access: token.Access{Token: "signed.jwt.token", ExpiresAt: expires}, Refresh: "opaque-refresh", RefreshExpiresAt: expires.Add(720 * time.Hour)},
 	}
 
-	w := send(t, svc, http.MethodPost, "/auth/login", `{"email":"Reader@example.com","password":"12345678"}`, nil)
+	w := send(t, svc, http.MethodPost, "/auth/login", `{"email":"Reader@example.com","password":"12345678"}`, map[string]string{"X-Device-Name": "Firefox on Windows"})
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body %s", w.Code, w.Body)
 	}
-	if svc.gotEmail != "Reader@example.com" || svc.gotPass != "12345678" {
-		t.Errorf("service got %q / %q", svc.gotEmail, svc.gotPass)
+	if svc.gotEmail != "Reader@example.com" || svc.gotPass != "12345678" || svc.gotDevice != "Firefox on Windows" {
+		t.Errorf("service got %q / %q / %q", svc.gotEmail, svc.gotPass, svc.gotDevice)
 	}
 
 	var body struct {
-		AccessToken string    `json:"accessToken"`
-		TokenType   string    `json:"tokenType"`
-		ExpiresAt   time.Time `json:"expiresAt"`
-		User        struct {
+		AccessToken  string    `json:"accessToken"`
+		TokenType    string    `json:"tokenType"`
+		ExpiresAt    time.Time `json:"expiresAt"`
+		RefreshToken string    `json:"refreshToken"`
+		User         struct {
 			ID string `json:"id"`
 		} `json:"user"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.AccessToken != "signed.jwt.token" || body.TokenType != "Bearer" || !body.ExpiresAt.Equal(expires) || body.User.ID != "u1" {
+	if body.AccessToken != "signed.jwt.token" || body.TokenType != "Bearer" || !body.ExpiresAt.Equal(expires) || body.RefreshToken != "opaque-refresh" || body.User.ID != "u1" {
 		t.Errorf("body = %+v", body)
 	}
 	if strings.Contains(w.Body.String(), "argon2id") {
@@ -270,5 +284,45 @@ func TestUpdateMeNeedsSignIn(t *testing.T) {
 
 	if w.Code != http.StatusUnauthorized || svc.gotName != "" {
 		t.Errorf("status = %d, service called = %v", w.Code, svc.gotName != "")
+	}
+}
+
+func TestRefreshHandler(t *testing.T) {
+
+	svc := &fakeAccounts{user: User{ID: "u1"}, tokens: Tokens{Access: token.Access{Token: "new.jwt"}, Refresh: "next-refresh"}}
+
+	w := send(t, svc, http.MethodPost, "/auth/refresh", `{"refreshToken":"old-refresh"}`, map[string]string{"X-Device-Name": "Safari on iOS"})
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body %s", w.Code, w.Body)
+	}
+	if svc.gotRefresh != "old-refresh" || svc.gotDevice != "Safari on iOS" {
+		t.Errorf("service got %q / %q", svc.gotRefresh, svc.gotDevice)
+	}
+	if !strings.Contains(w.Body.String(), `"refreshToken":"next-refresh"`) || !strings.Contains(w.Body.String(), `"accessToken":"new.jwt"`) {
+		t.Errorf("body = %s", w.Body)
+	}
+}
+
+func TestRefreshHandlerRefused(t *testing.T) {
+
+	w := send(t, &fakeAccounts{err: ErrInvalidRefreshToken}, http.MethodPost, "/auth/refresh", `{"refreshToken":"old"}`, nil)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want 401", w.Code)
+	}
+
+	w = send(t, &fakeAccounts{}, http.MethodPost, "/auth/refresh", `{}`, nil)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("empty token: status = %d, want 400", w.Code)
+	}
+}
+
+func TestLogoutHandler(t *testing.T) {
+
+	svc := &fakeAccounts{}
+	w := send(t, svc, http.MethodPost, "/auth/logout", `{"refreshToken":"the-refresh"}`, nil)
+
+	if w.Code != http.StatusNoContent || svc.gotRefresh != "the-refresh" {
+		t.Errorf("status = %d, service got %q", w.Code, svc.gotRefresh)
 	}
 }

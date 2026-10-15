@@ -7,6 +7,7 @@ import (
 	"net/mail"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	"github.com/fizzisme/user-service/internal/token"
@@ -54,6 +55,8 @@ type store interface {
 	FindByEmail(ctx context.Context, email string) (User, error)
 	FindByID(ctx context.Context, id string) (User, error)
 	UpdateProfile(ctx context.Context, id, name string, p Profile) (User, error)
+
+	sessionStore
 }
 
 // issuer signs access tokens; *token.Issuer outside tests.
@@ -64,10 +67,17 @@ type issuer interface {
 type Service struct {
 	store  store
 	tokens issuer
+
+	// refreshTTL is how long a refresh token is accepted, and so how long
+	// a device stays signed in without being used.
+	refreshTTL time.Duration
+
+	// now is time.Now outside tests.
+	now func() time.Time
 }
 
-func NewService(store store, tokens issuer) *Service {
-	return &Service{store: store, tokens: tokens}
+func NewService(store store, tokens issuer, refreshTTL time.Duration) *Service {
+	return &Service{store: store, tokens: tokens, refreshTTL: refreshTTL, now: time.Now}
 }
 
 // RegisterInput is a new account as the user typed it.
@@ -114,35 +124,35 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (User, error) 
 	})
 }
 
-// Login checks an email and password and signs an access token for the
-// account. A wrong email and a wrong password give the same error.
-func (s *Service) Login(ctx context.Context, email, password string) (User, token.Access, error) {
+// Login checks an email and password and starts a session for the account
+// on device. A wrong email and a wrong password give the same error.
+func (s *Service) Login(ctx context.Context, email, password, device string) (User, Tokens, error) {
 
 	u, err := s.store.FindByEmail(ctx, normalizeEmail(email))
 	if errors.Is(err, ErrNotFound) {
 		// Hash anyway, so an unknown email takes as long to refuse as a
 		// wrong password and timing does not reveal which accounts exist.
 		verifyPassword(password, dummyHash())
-		return User{}, token.Access{}, ErrInvalidCredentials
+		return User{}, Tokens{}, ErrInvalidCredentials
 	}
 	if err != nil {
-		return User{}, token.Access{}, err
+		return User{}, Tokens{}, err
 	}
 
 	ok, err := verifyPassword(password, u.PasswordHash)
 	if err != nil {
-		return User{}, token.Access{}, err
+		return User{}, Tokens{}, err
 	}
 	if !ok {
-		return User{}, token.Access{}, ErrInvalidCredentials
+		return User{}, Tokens{}, ErrInvalidCredentials
 	}
 
-	access, err := s.tokens.Issue(token.Subject{ID: u.ID, Email: u.Email, Name: u.Name, Roles: []string{u.Role}})
+	tokens, err := s.startSession(ctx, u, device)
 	if err != nil {
-		return User{}, token.Access{}, err
+		return User{}, Tokens{}, err
 	}
 
-	return u, access, nil
+	return u, tokens, nil
 }
 
 // Me returns the account an access token was issued for.

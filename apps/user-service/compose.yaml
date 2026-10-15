@@ -73,6 +73,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret}
       JWT_ISSUER: ${JWT_ISSUER:-fiurozz}
       JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
+      JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-720h}
     ports:
       - "${USER_PORT:-8085}:8085"
     healthcheck:

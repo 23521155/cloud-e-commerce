@@ -25,6 +25,10 @@ type Config struct {
 
 	// AccessTokenTTL is how long an access token is accepted.
 	AccessTokenTTL time.Duration
+
+	// RefreshTokenTTL is how long a signed-in device stays signed in
+	// without being used.
+	RefreshTokenTTL time.Duration
 }
 
 // Load reads environment variables (via a .env file) into a Config.
@@ -53,6 +57,12 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("JWT_ACCESS_TTL: %w", err)
 	}
 	cfg.AccessTokenTTL = ttl
+
+	refreshTTL, err := time.ParseDuration(getEnv("JWT_REFRESH_TTL", "720h"))
+	if err != nil {
+		return nil, fmt.Errorf("JWT_REFRESH_TTL: %w", err)
+	}
+	cfg.RefreshTokenTTL = refreshTTL
 
 	return cfg, nil
 }

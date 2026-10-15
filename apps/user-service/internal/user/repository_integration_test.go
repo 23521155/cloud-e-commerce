@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/fizzisme/user-service/internal/database"
 	"github.com/google/uuid"
@@ -130,5 +131,50 @@ func TestUpdateProfile(t *testing.T) {
 
 	if _, err := repo.UpdateProfile(ctx, "missing", "R", Profile{}); !errors.Is(err, ErrNotFound) {
 		t.Errorf("missing id error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestRefreshTokenLifecycle(t *testing.T) {
+	repo := newTestRepo(t)
+	u := newUser(t, repo)
+	ctx := context.Background()
+
+	if _, err := repo.Create(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+
+	family := uuid.NewString()
+	_, hash, err := newRefreshToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := repo.CreateRefreshToken(ctx, RefreshToken{UserID: u.ID, FamilyID: family, TokenHash: hash, DeviceName: "Firefox on Windows", ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := repo.FindRefreshToken(ctx, hash)
+	if err != nil || got.UserID != u.ID || got.FamilyID != family || got.UsedAt != nil || got.RevokedAt != nil {
+		t.Fatalf("FindRefreshToken = %+v, %v", got, err)
+	}
+
+	marked, err := repo.MarkRefreshTokenUsed(ctx, got.ID)
+	if err != nil || !marked {
+		t.Errorf("first MarkRefreshTokenUsed = %v, %v; want true", marked, err)
+	}
+	marked, err = repo.MarkRefreshTokenUsed(ctx, got.ID)
+	if err != nil || marked {
+		t.Errorf("second MarkRefreshTokenUsed = %v, %v; want false", marked, err)
+	}
+
+	if err := repo.RevokeFamily(ctx, family); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = repo.FindRefreshToken(ctx, hash); got.RevokedAt == nil || got.UsedAt == nil {
+		t.Errorf("after revoke: %+v", got)
+	}
+
+	if _, err := repo.FindRefreshToken(ctx, hashToken("unknown")); !errors.Is(err, ErrNotFound) {
+		t.Errorf("unknown token error = %v, want ErrNotFound", err)
 	}
 }

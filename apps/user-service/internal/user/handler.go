@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/fizzisme/user-service/internal/token"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
@@ -16,6 +15,10 @@ import (
 // the header from client requests.
 const userIDHeader = "X-User-ID"
 
+// deviceHeader is the browser and OS the gateway reads from the User-Agent,
+// kept with each session.
+const deviceHeader = "X-Device-Name"
+
 // maxBodyBytes bounds a request body; a name, an email and a password fit easily.
 const maxBodyBytes = 16 << 10
 
@@ -23,7 +26,9 @@ const maxBodyBytes = 16 << 10
 // with a fake.
 type accounts interface {
 	Register(ctx context.Context, in RegisterInput) (User, error)
-	Login(ctx context.Context, email, password string) (User, token.Access, error)
+	Login(ctx context.Context, email, password, device string) (User, Tokens, error)
+	Refresh(ctx context.Context, refreshToken, device string) (User, Tokens, error)
+	Logout(ctx context.Context, refreshToken string) error
 	Me(ctx context.Context, id string) (User, error)
 	UpdateProfile(ctx context.Context, id, name string, p Profile) (User, error)
 }
@@ -42,6 +47,8 @@ func NewHandler(service accounts, log *zap.Logger) *Handler {
 func (h *Handler) Register(api *gin.RouterGroup) {
 	api.POST("/auth/register", h.register)
 	api.POST("/auth/login", h.login)
+	api.POST("/auth/refresh", h.refresh)
+	api.POST("/auth/logout", h.logout)
 	api.GET("/me", h.me)
 	api.PUT("/me", h.updateMe)
 }
@@ -83,12 +90,26 @@ type loginRequest struct {
 	Password string `json:"password"`
 }
 
-// loginResponse carries the access token to send as Authorization: Bearer.
+// loginResponse carries the access token to send as Authorization: Bearer,
+// and the refresh token that gets the next one. Refresh answers the same.
 type loginResponse struct {
-	AccessToken string    `json:"accessToken"`
-	TokenType   string    `json:"tokenType"`
-	ExpiresAt   time.Time `json:"expiresAt"`
-	User        User      `json:"user"`
+	AccessToken      string    `json:"accessToken"`
+	TokenType        string    `json:"tokenType"`
+	ExpiresAt        time.Time `json:"expiresAt"`
+	RefreshToken     string    `json:"refreshToken"`
+	RefreshExpiresAt time.Time `json:"refreshExpiresAt"`
+	User             User      `json:"user"`
+}
+
+func newLoginResponse(u User, t Tokens) loginResponse {
+	return loginResponse{
+		AccessToken:      t.Access.Token,
+		TokenType:        "Bearer",
+		ExpiresAt:        t.Access.ExpiresAt,
+		RefreshToken:     t.Refresh,
+		RefreshExpiresAt: t.RefreshExpiresAt,
+		User:             u,
+	}
 }
 
 func (h *Handler) login(c *gin.Context) {
@@ -101,18 +122,57 @@ func (h *Handler) login(c *gin.Context) {
 		return
 	}
 
-	u, access, err := h.service.Login(c.Request.Context(), req.Email, req.Password)
+	u, tokens, err := h.service.Login(c.Request.Context(), req.Email, req.Password, c.GetHeader(deviceHeader))
 	if err != nil {
 		h.fail(c, err)
 		return
 	}
 
-	c.JSON(http.StatusOK, loginResponse{
-		AccessToken: access.Token,
-		TokenType:   "Bearer",
-		ExpiresAt:   access.ExpiresAt,
-		User:        u,
-	})
+	c.JSON(http.StatusOK, newLoginResponse(u, tokens))
+}
+
+// refreshRequest is the body of POST /auth/refresh and POST /auth/logout.
+type refreshRequest struct {
+	RefreshToken string `json:"refreshToken"`
+}
+
+func (h *Handler) refresh(c *gin.Context) {
+
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBodyBytes)
+
+	var req refreshRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.RefreshToken == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	u, tokens, err := h.service.Refresh(c.Request.Context(), req.RefreshToken, c.GetHeader(deviceHeader))
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, newLoginResponse(u, tokens))
+}
+
+// logout ends the session of a refresh token. It always answers 204: a
+// token that is not valid has no session to end.
+func (h *Handler) logout(c *gin.Context) {
+
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBodyBytes)
+
+	var req refreshRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.RefreshToken == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	if err := h.service.Logout(c.Request.Context(), req.RefreshToken); err != nil {
+		h.fail(c, err)
+		return
+	}
+
+	c.Status(http.StatusNoContent)
 }
 
 // me answers GET /me with the signed-in account.
@@ -198,6 +258,9 @@ func (h *Handler) fail(c *gin.Context, err error) {
 
 	case errors.Is(err, ErrInvalidCredentials):
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "email or password is incorrect"})
+
+	case errors.Is(err, ErrInvalidRefreshToken):
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "sign in required"})
 
 	default:
 		h.log.Error("cannot handle account request", zap.Error(err))

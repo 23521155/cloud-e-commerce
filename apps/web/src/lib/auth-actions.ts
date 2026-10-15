@@ -3,8 +3,8 @@
 // Google sign-in and password reset are still mock: each only redirects so the flow can be walked
 // through. Credentials arrive in the POST body and are never stored, logged or put in a URL.
 import { redirect } from "next/navigation";
-import { endSession, startSession } from "@/lib/session";
-import { login, registerAccount } from "@/lib/user-api";
+import { endSession, getRefreshToken, startSession } from "@/lib/session";
+import { login, logout, registerAccount } from "@/lib/user-api";
 
 /** What an auth form shows after a refused attempt, with the values to type in again. */
 export type AuthFormState = {
@@ -26,7 +26,7 @@ export async function signIn(_prev: AuthFormState, formData: FormData): Promise<
   const result = await login(email, String(formData.get("password") ?? ""));
 
   if (result.ok) {
-    await startSession(result.accessToken, result.expiresAt);
+    await startSession(result.tokens);
     redirect(localPath(formData.get("next")));
   }
 
@@ -55,7 +55,7 @@ export async function register(_prev: AuthFormState, formData: FormData): Promis
     // Signed in straight away; if that fails the account still exists, so send them to sign in.
     const signedIn = await login(email, password);
     if (!signedIn.ok) redirect("/sign-in?registered=1");
-    await startSession(signedIn.accessToken, signedIn.expiresAt);
+    await startSession(signedIn.tokens);
     redirect("/");
   }
 
@@ -72,7 +72,10 @@ export async function register(_prev: AuthFormState, formData: FormData): Promis
   }
 }
 
+/** Ends the session on the user service too, so the refresh token cannot be used again. */
 export async function signOut() {
+  const refreshToken = await getRefreshToken();
+  if (refreshToken) await logout(refreshToken);
   await endSession();
   redirect("/");
 }
