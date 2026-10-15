@@ -1,7 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
+import { register, type RegisterState } from "@/lib/auth-actions";
+
+/** Text input on the index card; required unless told otherwise. */
+export function TextField({ label, ...input }: { label: string } & React.InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <label className="auth__field">
+      <span className="co__label small-upper">{label}</span>
+      <input className="co__input" required {...input} />
+    </label>
+  );
+}
 
 /** Primary submit: rough rust brush button with a pending label while the server action runs. */
 export function SubmitButton({ children, pending: pendingLabel }: { children: React.ReactNode; pending: string }) {
@@ -60,5 +71,24 @@ export function PasswordField({ label, name, autoComplete, hint, match, minLengt
       </span>
       {hint && <span className="co__hint">{hint}</span>}
     </label>
+  );
+}
+
+/** Register form: a refused attempt shows why and keeps the name and email, never the passwords. */
+export function RegisterForm() {
+  const [state, formAction] = useActionState<RegisterState, FormData>(register, {});
+  return (
+    <form action={formAction} className="auth__form">
+      {state.error && (
+        <p role="alert" className="auth__error m-0">
+          {state.error}
+        </p>
+      )}
+      <TextField label="Name" name="name" autoComplete="name" defaultValue={state.name} />
+      <TextField label="Email" name="email" type="email" autoComplete="email" placeholder="you@example.com" defaultValue={state.email} />
+      <PasswordField label="Password" name="password" autoComplete="new-password" minLength={8} hint="At least 8 characters." />
+      <PasswordField label="Confirm password" name="confirm" autoComplete="new-password" match="password" />
+      <SubmitButton pending="Creating account…">Create account</SubmitButton>
+    </form>
   );
 }

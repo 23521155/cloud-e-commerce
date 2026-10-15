@@ -9,6 +9,7 @@ services:
     env_file:
       - ./configs/.env
     environment:
+      USER_SERVICE: http://user-service:8085
       CATALOG_SERVICE: http://catalog-service:8083
       ORDER_SERVICE: http://order-service:8084
       OTEL_ENDPOINT: jaeger:4317
@@ -17,6 +18,7 @@ services:
     ports:
       - "${GATEWAY_PORT:-8080}:8080"
     depends_on:
+      - user-service
       - catalog-service
       - order-service
       - jaeger

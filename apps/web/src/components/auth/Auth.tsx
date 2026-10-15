@@ -1,18 +1,9 @@
 import Link from "next/link";
-import { PasswordField, SubmitButton } from "@/components/auth/AuthClient";
+import { PasswordField, RegisterForm, SubmitButton, TextField } from "@/components/auth/AuthClient";
 import { BookCover } from "@/components/ui/BookArt";
-import { continueWithGoogle, register, requestReset, signIn } from "@/lib/auth-actions";
+import { continueWithGoogle, requestReset, signIn } from "@/lib/auth-actions";
 
 export type AuthMode = "sign-in" | "register" | "forgot";
-
-function TextField({ label, ...input }: { label: string } & React.InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <label className="auth__field">
-      <span className="co__label small-upper">{label}</span>
-      <input className="co__input" required {...input} />
-    </label>
-  );
-}
 
 function GoogleButton({ label }: { label: string }) {
   return (
@@ -38,10 +29,15 @@ function Divider() {
   );
 }
 
-function SignInForm() {
+function SignInForm({ registered }: { registered: boolean }) {
   return (
     <>
       <form action={signIn} className="auth__form">
+        {registered && (
+          <p role="status" className="auth__sent m-0">
+            Your account is ready. Sign in to continue.
+          </p>
+        )}
         <TextField label="Email" name="email" type="email" autoComplete="email" placeholder="you@example.com" />
         <PasswordField
           label="Password"
@@ -58,18 +54,6 @@ function SignInForm() {
       <Divider />
       <GoogleButton label="Continue with Google" />
     </>
-  );
-}
-
-function RegisterForm() {
-  return (
-      <form action={register} className="auth__form">
-        <TextField label="Name" name="name" autoComplete="name" />
-        <TextField label="Email" name="email" type="email" autoComplete="email" placeholder="you@example.com" />
-        <PasswordField label="Password" name="password" autoComplete="new-password" minLength={8} hint="At least 8 characters." />
-        <PasswordField label="Confirm password" name="confirm" autoComplete="new-password" match="password" />
-        <SubmitButton pending="Creating account…">Create account</SubmitButton>
-      </form>
   );
 }
 
@@ -109,7 +93,7 @@ const SHELF = [
 ];
 
 /** Every auth screen: heading and a few books on the left, the form on an index card on the right. */
-export function AuthPage({ mode, sent = false }: { mode: AuthMode; sent?: boolean }) {
+export function AuthPage({ mode, sent = false, registered = false }: { mode: AuthMode; sent?: boolean; registered?: boolean }) {
   const copy = COPY[mode];
   const sw = SWITCH[mode];
   return (
@@ -140,7 +124,7 @@ export function AuthPage({ mode, sent = false }: { mode: AuthMode; sent?: boolea
             <span>Marginalleya</span>
           </div>
           <div className="auth__body">
-            {mode === "sign-in" && <SignInForm />}
+            {mode === "sign-in" && <SignInForm registered={registered} />}
             {mode === "register" && <RegisterForm />}
             {mode === "forgot" && <ForgotForm sent={sent} />}
             <p className="auth__switch">

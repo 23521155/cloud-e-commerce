@@ -2022,6 +2022,14 @@
     color: #a8542f; /* rust orange, same as the solid buttons */
     font-style: normal;
   }
+  .auth__error {
+    border: 1px dashed var(--color-oxblood-700);
+    padding: 12px 16px;
+    color: var(--color-oxblood-700);
+    font-family: var(--font-serif);
+    font-size: clamp(16px, 1.2vw, 18px);
+    line-height: 1.45;
+  }
   .auth__sent {
     color: var(--color-walnut-900);
     font-family: var(--font-serif);
