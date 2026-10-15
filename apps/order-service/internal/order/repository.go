@@ -115,6 +115,34 @@ ORDER BY expires_at`, sql.Named("limit", limit)); err != nil {
 	return orders, nil
 }
 
+// ListByUser returns up to limit orders of one customer, newest first, with
+// their items. Online orders that are still awaiting payment, or were
+// cancelled without being paid, are left out: the customer never got them.
+func (r *Repository) ListByUser(ctx context.Context, userID string, limit int) ([]Order, error) {
+
+	// Reads ix_orders_user_id_created_at.
+	orders := []Order{}
+	if err := r.db.SelectContext(ctx, &orders, `
+SELECT TOP (@limit) `+orderColumns+`
+FROM orders
+WHERE user_id = @user_id
+  AND status <> N'AWAITING_PAYMENT'
+  AND NOT (status = N'CANCELLED' AND payment_method <> N'cod' AND payment_status = N'UNPAID')
+ORDER BY created_at DESC`,
+		sql.Named("limit", limit), sql.Named("user_id", userID)); err != nil {
+		return nil, err
+	}
+
+	for i := range orders {
+		var err error
+		if orders[i].Items, err = r.items(ctx, orders[i].ID); err != nil {
+			return nil, err
+		}
+	}
+
+	return orders, nil
+}
+
 // items returns the items of the order with id, in the order they were added.
 func (r *Repository) items(ctx context.Context, id int64) ([]Item, error) {
 

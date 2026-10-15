@@ -390,3 +390,57 @@ func TestCancelAwaitingLeavesAPaidOrderAlone(t *testing.T) {
 		t.Errorf("status/payment = %q/%q: the paid order was changed", got.Status, got.PaymentStatus)
 	}
 }
+
+func TestListByUserShowsOnlyTheCustomersOrders(t *testing.T) {
+	repo := newTestRepo(t)
+	ctx := context.Background()
+
+	user := "it-user-" + newKey()
+	other := "it-user-" + newKey()
+
+	insert := func(owner *string, status, method, paymentStatus string) *Order {
+		t.Helper()
+		o := newTestOrder(t, repo)
+		o.UserID, o.Status, o.PaymentMethod, o.PaymentStatus = owner, status, method, paymentStatus
+		if status == StatusAwaitingPayment {
+			until := time.Now().Add(time.Hour)
+			o.ExpiresAt = &until
+		}
+		if err := repo.Insert(ctx, newKey(), o); err != nil {
+			t.Fatal(err)
+		}
+		return o
+	}
+
+	older := insert(&user, StatusConfirmed, PaymentCOD, PaymentUnpaid)
+	// A paid order is written awaiting payment and then paid, as in checkout.
+	paid := insert(&user, StatusAwaitingPayment, PaymentCard, PaymentUnpaid)
+	if err := repo.MarkPaid(ctx, paid.ID, "it-ref-"+paid.Code); err != nil {
+		t.Fatal(err)
+	}
+	insert(&user, StatusAwaitingPayment, PaymentVietQR, PaymentUnpaid) // not paid yet
+	insert(&user, StatusCancelled, PaymentCard, PaymentUnpaid)         // abandoned payment
+	insert(&other, StatusConfirmed, PaymentCOD, PaymentUnpaid)
+	insert(nil, StatusConfirmed, PaymentCOD, PaymentUnpaid)
+
+	got, err := repo.ListByUser(ctx, user, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(got) != 2 || got[0].Code != paid.Code || got[1].Code != older.Code {
+		codes := make([]string, len(got))
+		for i, o := range got {
+			codes[i] = o.Code
+		}
+		t.Fatalf("listed %v, want [%s %s] (newest first, only orders the customer got)", codes, paid.Code, older.Code)
+	}
+	if len(got[0].Items) != 2 {
+		t.Errorf("items = %+v, want the two books", got[0].Items)
+	}
+
+	none, err := repo.ListByUser(ctx, "it-user-nobody", 10)
+	if err != nil || none == nil || len(none) != 0 {
+		t.Errorf("no orders = %v, %v; want an empty list", none, err)
+	}
+}

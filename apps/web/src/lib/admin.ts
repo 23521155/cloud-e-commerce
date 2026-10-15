@@ -1,7 +1,7 @@
 // Admin data. Mock until the API and database exist. The shop sees every reader's orders: the
 // signed-in reader's mock orders (lib/orders) plus other readers', each with who placed it.
 // Names are unaccented: the display face does not render Vietnamese diacritics reliably.
-import { getOrders, orderTotal, withBooks, type Order, type OrderStatus } from "@/lib/orders";
+import { MOCK_READER_ORDERS, orderTotal, withBooks, type Order, type OrderStatus } from "@/lib/orders";
 import { PAYMENT_METHODS, type PaymentMethodId } from "@/lib/payment";
 
 export type Person = { name: string; email: string };
@@ -21,7 +21,7 @@ const OTHER_ORDERS: { id: string; placed: string; status: OrderStatus; payment: 
 
 /** Every order in the shop, newest first. */
 export async function getShopOrders(): Promise<ShopOrder[]> {
-  const [mine, others] = await Promise.all([getOrders(), withBooks(OTHER_ORDERS)]);
+  const [mine, others] = await Promise.all([withBooks(MOCK_READER_ORDERS), withBooks(OTHER_ORDERS)]);
   return [...mine.map((o) => ({ ...o, customer: READER })), ...others].sort((a, b) => b.placed.localeCompare(a.placed));
 }
 

@@ -1,6 +1,7 @@
 // Order client for order-service, reached through the API gateway.
 // Server-side only: the gateway URL is read on the server and never sent to the browser.
 import { forwardedFor, GATEWAY_URL } from "@/lib/gateway";
+import { authHeader } from "@/lib/session";
 
 const BASE = `${GATEWAY_URL}/api/orders`;
 
@@ -9,7 +10,10 @@ export type PlaceableMethod = "cod" | "vietqr" | "card";
 
 export const isPlaceable = (id: string): id is PlaceableMethod => id === "cod" || id === "vietqr" || id === "card";
 
-/** A guest checkout. Prices are not sent: the order service reads them from the catalogue. */
+/**
+ * A checkout. Prices are not sent: the order service reads them from the catalogue. A signed-in
+ * reader's token goes with it, so the order is theirs; without one it is a guest order.
+ */
 export type NewOrder = {
   slugs: string[];
   paymentMethod: PlaceableMethod;
@@ -53,7 +57,7 @@ export async function placeOrder(key: string, { slugs, ...order }: NewOrder): Pr
   try {
     res = await fetch(BASE, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Idempotency-Key": key, ...(await forwardedFor()) },
+      headers: { "Content-Type": "application/json", "Idempotency-Key": key, ...(await authHeader()), ...(await forwardedFor()) },
       body: JSON.stringify({ items: slugs.map((slug) => ({ slug })), ...order }),
       cache: "no-store",
     });
@@ -93,6 +97,27 @@ export async function vnpayReturn(query: string): Promise<VnpayReturnResult> {
 
   if (res.ok) return { ok: true, ...((await res.json()) as { order: PlacedOrder; paymentSucceeded: boolean }) };
   if (res.status === 400 || res.status === 404) return { ok: false, reason: "invalid" };
+
+  return { ok: false, reason: "failed" };
+}
+
+export type MyOrdersResult =
+  | { ok: true; orders: PlacedOrder[] }
+  /** The token was refused (expired); the reader has to sign in again. */
+  | { ok: false; reason: "signed-out" }
+  | { ok: false; reason: "failed" };
+
+/** GET /api/orders: the signed-in reader's orders, newest first. */
+export async function listMyOrders(accessToken: string): Promise<MyOrdersResult> {
+  let res: Response;
+  try {
+    res = await fetch(BASE, { cache: "no-store", headers: { Authorization: `Bearer ${accessToken}`, ...(await forwardedFor()) } });
+  } catch {
+    return { ok: false, reason: "failed" };
+  }
+
+  if (res.ok) return { ok: true, orders: ((await res.json()) as { items: PlacedOrder[] }).items };
+  if (res.status === 401) return { ok: false, reason: "signed-out" };
 
   return { ok: false, reason: "failed" };
 }

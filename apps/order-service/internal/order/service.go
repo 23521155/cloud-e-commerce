@@ -83,6 +83,7 @@ type Store interface {
 	MarkPaid(ctx context.Context, id int64, ref string) error
 	CancelAwaiting(ctx context.Context, id int64, reason string) error
 	ListExpiredAwaiting(ctx context.Context, limit int) ([]Order, error)
+	ListByUser(ctx context.Context, userID string, limit int) ([]Order, error)
 }
 
 // Payments is what the service needs from the payment gateway. The real one
@@ -143,6 +144,10 @@ type CreateInput struct {
 
 	// ClientIP is the customer's address; the payment gateway asks for it.
 	ClientIP string
+
+	// UserID is the signed-in customer (the JWT subject the gateway
+	// forwards); nil for a guest checkout.
+	UserID *string
 }
 
 // isOnline reports whether method is paid through the gateway.
@@ -257,6 +262,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (order Order, repl
 
 	order = Order{
 		Code:          code,
+		UserID:        in.UserID,
 		Status:        StatusConfirmed,
 		PaymentMethod: in.PaymentMethod,
 		PaymentStatus: PaymentUnpaid,
@@ -325,6 +331,17 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (order Order, repl
 	}
 
 	return order, false, nil
+}
+
+// maxListed bounds one "my orders" answer; a reader of a second-hand
+// bookshop is not expected to have more.
+const maxListed = 100
+
+// ListMine returns the orders of a signed-in customer, newest first. Online
+// orders count only once paid: one still awaiting payment, or abandoned
+// unpaid, never became an order for the customer.
+func (s *Service) ListMine(ctx context.Context, userID string) ([]Order, error) {
+	return s.store.ListByUser(ctx, userID, maxListed)
 }
 
 // replay answers a repeated request with the order the key already placed,
