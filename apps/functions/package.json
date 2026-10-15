@@ -12,6 +12,7 @@
     "test": "echo \"No tests yet...\""
   },
   "dependencies": {
+    "@azure/communication-email": "^1.1.0",
     "@azure/functions": "^4.0.0",
     "nodemailer": "^6.10.1"
   },

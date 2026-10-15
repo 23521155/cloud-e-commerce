@@ -30,6 +30,22 @@ param internalToken string
 @secure()
 param jwtSecret string
 
+@description('Encrypts the TOTP secrets of two-step sign-in.')
+@secure()
+param mfaEncryptionKey string
+
+@description('Storage account whose queues carry emails and account events, and that the Functions host keeps its state in.')
+param storageAccountName string
+
+@description('Azure Communication Services resource the sendEmail Function sends through.')
+param communicationServiceName string
+
+@description('Sender address of the shop\'s emails, at the ACS email domain.')
+param emailSender string
+
+@description('Application Insights connection string: the Function\'s runs show up there.')
+param appInsightsConnectionString string
+
 @description('Azure Managed Redis that holds the web app\'s shared data cache.')
 param redisName string
 
@@ -57,6 +73,17 @@ resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing =
   name: registryName
 }
 
+
+resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' existing = {
+  name: storageAccountName
+}
+
+resource communication 'Microsoft.Communication/communicationServices@2023-04-01' existing = {
+  name: communicationServiceName
+}
+
+// One connection string for the queues and the Functions host's state.
+var storageConnectionString = 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${storageAccount.listKeys().keys[0].value};EndpointSuffix=${az.environment().suffixes.storage}'
 
 resource redis 'Microsoft.Cache/redisEnterprise@2025-07-01' existing = {
   name: redisName
@@ -279,6 +306,7 @@ resource order 'Microsoft.App/containerApps@2024-03-01' = {
         #disable-next-line use-secure-value-for-secure-inputs // built from the secure sqlAdminPassword
         { name: 'database-url', value: orderDbUrl }
         { name: 'internal-token', value: internalToken }
+        { name: 'storage-connection-string', value: storageConnectionString }
       ]
       ingress: {
         external: false // internal only: the gateway calls it
@@ -306,6 +334,8 @@ resource order 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'VNPAY_HASH_SECRET', value: '' }
             { name: 'VNPAY_RETURN_URL', value: 'https://${web.properties.configuration.ingress.fqdn}/checkout/vnpay-return' }
             { name: 'VNPAY_CONFIRM_ON_RETURN', value: 'false' }
+            // Reads user-email-verified: guest orders join the account whose email was confirmed.
+            { name: 'STORAGE_CONNECTION_STRING', secretRef: 'storage-connection-string' }
           ]
         }
       ]
@@ -332,6 +362,8 @@ resource user 'Microsoft.App/containerApps@2024-03-01' = {
         #disable-next-line use-secure-value-for-secure-inputs // built from the secure sqlAdminPassword
         { name: 'database-url', value: usersDbUrl }
         { name: 'jwt-secret', value: jwtSecret }
+        { name: 'mfa-encryption-key', value: mfaEncryptionKey }
+        { name: 'storage-connection-string', value: storageConnectionString }
       ]
       ingress: {
         external: false // internal only: the gateway calls it and sets the trusted X-User-* headers
@@ -355,6 +387,11 @@ resource user 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'JWT_ISSUER', value: prefix }
             { name: 'JWT_ACCESS_TTL', value: '15m' }
             { name: 'JWT_REFRESH_TTL', value: '720h' } // a device stays signed in 30 days without use
+            { name: 'MFA_ENCRYPTION_KEY', secretRef: 'mfa-encryption-key' }
+            // The outbox relay writes the email-outbox and user-email-verified queues here.
+            { name: 'STORAGE_CONNECTION_STRING', secretRef: 'storage-connection-string' }
+            // For the links in emails.
+            { name: 'WEB_URL', value: 'https://${web.properties.configuration.ingress.fqdn}' }
           ]
         }
       ]
@@ -405,6 +442,61 @@ resource gateway 'Microsoft.App/containerApps@2024-03-01' = {
         }
       ]
       scale: scale
+    }
+  }
+}
+
+// The sendEmail Azure Function, hosted as a Function App on Container Apps (kind functionapp) in the
+// same environment, from the image apps/functions/Dockerfile builds. Container Apps scales it on
+// the email-outbox queue by itself (KEDA rules made from the trigger), down to zero when idle.
+resource functions 'Microsoft.App/containerApps@2024-10-02-preview' = {
+  name: 'functions'
+  location: location
+  kind: 'functionapp'
+  identity: identity
+  dependsOn: [
+    acrPull
+  ]
+  properties: {
+    environmentId: environment.id
+    workloadProfileName: 'Consumption'
+    configuration: {
+      registries: registries
+      secrets: [
+        { name: 'azurewebjobsstorage', value: storageConnectionString }
+        { name: 'acs-connection-string', value: communication.listKeys().primaryConnectionString }
+        #disable-next-line use-secure-value-for-secure-inputs // a connection string, not a credential: it only sends telemetry
+        { name: 'appinsights-connection-string', value: appInsightsConnectionString }
+      ]
+      // Event-driven scaling needs ingress; internal, as nothing calls the Function over HTTP but /api/health.
+      ingress: {
+        external: false
+        targetPort: 80
+        transport: 'http'
+      }
+    }
+    template: {
+      containers: [
+        {
+          name: 'functions'
+          image: '${acrLoginServer}/functions:${imageTag}'
+          resources: {
+            cpu: json('0.5')
+            memory: '1Gi'
+          }
+          env: [
+            { name: 'AzureWebJobsStorage', secretRef: 'azurewebjobsstorage' }
+            { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'node' }
+            { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', secretRef: 'appinsights-connection-string' }
+            { name: 'ACS_CONNECTION_STRING', secretRef: 'acs-connection-string' }
+            { name: 'EMAIL_SENDER', value: emailSender }
+          ]
+        }
+      ]
+      scale: {
+        minReplicas: 0
+        maxReplicas: 3
+      }
     }
   }
 }

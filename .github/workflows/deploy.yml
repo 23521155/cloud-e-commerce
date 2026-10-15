@@ -10,6 +10,7 @@ on:
       - 'apps/catalog-service/**'
       - 'apps/order-service/**'
       - 'apps/user-service/**'
+      - 'apps/functions/**'
       - 'apps/web/**'
       - 'proto/**'
       - 'infra/**'
@@ -36,7 +37,7 @@ permissions:
 
 env:
   PREFIX: marginalleya
-  SERVICES: 'api-gateway catalog-service order-service user-service web'
+  SERVICES: 'api-gateway catalog-service order-service user-service functions web'
 
 jobs:
   plan:
@@ -114,6 +115,7 @@ jobs:
                sqlAdminPassword='${{ secrets.SQL_ADMIN_PASSWORD }}' \
                internalToken='${{ secrets.INTERNAL_TOKEN }}' \
                jwtSecret='${{ secrets.JWT_SECRET }}' \
+               mfaEncryptionKey='${{ secrets.MFA_ENCRYPTION_KEY }}' \
             -o none
 
       # The OIDC assertion lives about 5 minutes and base provisioning (Redis) takes longer,
@@ -204,6 +206,7 @@ jobs:
                sqlAdminPassword='${{ secrets.SQL_ADMIN_PASSWORD }}' \
                internalToken='${{ secrets.INTERNAL_TOKEN }}' \
                jwtSecret='${{ secrets.JWT_SECRET }}' \
+               mfaEncryptionKey='${{ secrets.MFA_ENCRYPTION_KEY }}' \
             -o none
 
       # Apps already exist and Bicep was skipped: only move each app to the new image (new revision).

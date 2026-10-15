@@ -43,6 +43,10 @@ param internalToken string
 @secure()
 param jwtSecret string
 
+@description('Encrypts the TOTP secrets of two-step sign-in: base64 of 32 random bytes.')
+@secure()
+param mfaEncryptionKey string
+
 module network 'modules/network.bicep' = {
   name: 'network'
   params: {
@@ -98,6 +102,23 @@ module redis 'modules/redis.bicep' = {
   }
 }
 
+// Queues between user-service, order-service and the sendEmail Function; the Function's storage too.
+module storage 'modules/storage.bicep' = {
+  name: 'storage'
+  params: {
+    location: location
+    name: take('${prefix}${suffix}', 24)
+  }
+}
+
+module communication 'modules/communication.bicep' = {
+  name: 'communication'
+  params: {
+    prefix: prefix
+    suffix: suffix
+  }
+}
+
 module containerApps 'modules/containerapps.bicep' = if(deployApps) {
   name: 'containerapps'
   params: {
@@ -113,8 +134,13 @@ module containerApps 'modules/containerapps.bicep' = if(deployApps) {
     sqlAdminPassword: sqlAdminPassword
     internalToken: internalToken
     jwtSecret: jwtSecret
+    mfaEncryptionKey: mfaEncryptionKey
     imageTag: imageTag
     redisName: redis.outputs.name
+    storageAccountName: storage.outputs.name
+    communicationServiceName: communication.outputs.communicationServiceName
+    emailSender: communication.outputs.senderAddress
+    appInsightsConnectionString: monitoring.outputs.appInsightsConnectionString
   }
 }
 
