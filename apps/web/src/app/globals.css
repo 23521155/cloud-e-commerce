@@ -2311,6 +2311,35 @@
   .ledger__slip :where(button, input):focus-visible {
     outline-color: var(--color-oxblood-700);
   }
+  /* A second slip below the first, leaning the other way */
+  .ledger__slip--second {
+    rotate: 0.8deg;
+  }
+  .two-step {
+    display: grid;
+    gap: 18px 28px;
+    align-items: start;
+  }
+  @media (min-width: 720px) {
+    .two-step {
+      grid-template-columns: auto minmax(0, 1fr);
+    }
+  }
+  .two-step__qr {
+    width: 220px;
+    height: 220px;
+    image-rendering: pixelated;
+    background: #fff;
+  }
+  .two-step__steps {
+    display: grid;
+    gap: 14px;
+  }
+  .two-step__secret {
+    font-family: ui-monospace, monospace;
+    letter-spacing: 0.08em;
+    word-break: break-all;
+  }
 
   /* ---------- Sell to us ---------- */
   .sell__layout {

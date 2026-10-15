@@ -36,6 +36,9 @@ type accounts interface {
 	ResendVerification(ctx context.Context, id string) error
 	RequestPasswordReset(ctx context.Context, email string) error
 	ResetPassword(ctx context.Context, token, password string) error
+	SetupTOTP(ctx context.Context, id string) (TOTPSetup, error)
+	ConfirmTOTP(ctx context.Context, id, code string) error
+	VerifyMFA(ctx context.Context, token, code string) (User, Tokens, error)
 }
 
 type Handler struct {
@@ -61,6 +64,9 @@ func (h *Handler) Register(api *gin.RouterGroup) {
 	api.POST("/me/verify-email", h.resendVerification)
 	api.POST("/auth/forgot-password", h.forgotPassword)
 	api.POST("/auth/reset-password", h.resetPassword)
+	api.POST("/me/mfa/totp/setup", h.setupTOTP)
+	api.POST("/me/mfa/totp/confirm", h.confirmTOTP)
+	api.POST("/auth/mfa/verify", h.verifyMFA)
 }
 
 // registerRequest is the body of POST /auth/register. Fields are checked by
@@ -133,6 +139,13 @@ func (h *Handler) login(c *gin.Context) {
 	}
 
 	u, tokens, err := h.service.Login(c.Request.Context(), req.Email, req.Password, c.GetHeader(deviceHeader))
+
+	// Right password, and a code is due: no tokens yet.
+	var mfa *MFARequiredError
+	if errors.As(err, &mfa) {
+		c.JSON(http.StatusOK, gin.H{"mfaRequired": true, "mfaToken": mfa.Token, "mfaExpiresAt": mfa.ExpiresAt})
+		return
+	}
 	if err != nil {
 		h.fail(c, err)
 		return
@@ -390,6 +403,75 @@ func (h *Handler) resetPassword(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+// setupTOTP answers POST /me/mfa/totp/setup with a new secret for the
+// reader's authenticator app.
+func (h *Handler) setupTOTP(c *gin.Context) {
+
+	id := c.GetHeader(userIDHeader)
+	if id == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "sign in required"})
+		return
+	}
+
+	setup, err := h.service.SetupTOTP(c.Request.Context(), id)
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"secret": setup.Secret, "otpauthUrl": setup.URL})
+}
+
+// codeRequest is the body of POST /me/mfa/totp/confirm and, with the token
+// from the sign-in, of POST /auth/mfa/verify.
+type codeRequest struct {
+	MFAToken string `json:"mfaToken"`
+	Code     string `json:"code"`
+}
+
+func (h *Handler) confirmTOTP(c *gin.Context) {
+
+	id := c.GetHeader(userIDHeader)
+	if id == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "sign in required"})
+		return
+	}
+
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBodyBytes)
+
+	var req codeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	if err := h.service.ConfirmTOTP(c.Request.Context(), id, req.Code); err != nil {
+		h.fail(c, err)
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}
+
+func (h *Handler) verifyMFA(c *gin.Context) {
+
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBodyBytes)
+
+	var req codeRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.MFAToken == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	u, tokens, err := h.service.VerifyMFA(c.Request.Context(), req.MFAToken, req.Code)
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, newLoginResponse(u, tokens))
+}
+
 // fail turns a service error into a response. It is the one place that
 // knows which error means which status.
 func (h *Handler) fail(c *gin.Context, err error) {
@@ -417,6 +499,18 @@ func (h *Handler) fail(c *gin.Context, err error) {
 
 	case errors.Is(err, ErrTooSoon):
 		c.JSON(http.StatusTooManyRequests, gin.H{"error": "an email was sent a moment ago, please wait a minute"})
+
+	case errors.Is(err, ErrWrongCode):
+		c.JSON(http.StatusBadRequest, gin.H{"error": "code is incorrect"})
+
+	case errors.Is(err, ErrInvalidChallenge):
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "sign in again"})
+
+	case errors.Is(err, ErrMFAAlreadyOn), errors.Is(err, ErrMFANotSetUp):
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+
+	case errors.Is(err, ErrMFAUnavailable):
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
 
 	case errors.Is(err, ErrInvalidRefreshToken):
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "sign in required"})

@@ -1,10 +1,10 @@
 import Link from "next/link";
-import { PasswordField, RegisterForm, SignInForm, SubmitButton, TextField } from "@/components/auth/AuthClient";
+import { CodeForm, PasswordField, RegisterForm, SignInForm, SubmitButton, TextField } from "@/components/auth/AuthClient";
 import { BookCover } from "@/components/ui/BookArt";
 import { verifyEmail } from "@/lib/account-actions";
 import { continueWithGoogle, requestReset, resetPassword } from "@/lib/auth-actions";
 
-export type AuthMode = "sign-in" | "register" | "forgot" | "verify" | "reset";
+export type AuthMode = "sign-in" | "register" | "forgot" | "verify" | "reset" | "code";
 
 /** The reset page's state: the token from the link, and why the last try was refused. */
 export type ResetState = { token?: string; error?: "invalid-link" | "weak" | "mismatch" | "failed" };
@@ -139,6 +139,7 @@ const COPY: Record<AuthMode, { card: string; title: [string, string]; intro: str
   forgot: { card: "Lost card", title: ["Reset your", "password"], intro: "Enter the email you signed up with and we will send a reset link." },
   verify: { card: "Reader's card", title: ["Confirm your", "email"], intro: "One click, and the shop knows this address is yours." },
   reset: { card: "Lost card", title: ["Choose a new", "password"], intro: "Every device you were signed in on will be signed out." },
+  code: { card: "Reader's card", title: ["One more", "step"], intro: "Open your authenticator app and type the code it shows for Marginalleya." },
 };
 
 const SWITCH: Record<AuthMode, { text: string; link: string; href: string }> = {
@@ -147,6 +148,7 @@ const SWITCH: Record<AuthMode, { text: string; link: string; href: string }> = {
   forgot: { text: "Remembered it?", link: "Back to sign in", href: "/sign-in" },
   verify: { text: "Done here?", link: "Go to your account", href: "/account" },
   reset: { text: "Remembered it?", link: "Back to sign in", href: "/sign-in" },
+  code: { text: "Not you?", link: "Start again", href: "/sign-in" },
 };
 
 const SHELF = [
@@ -207,6 +209,7 @@ export function AuthPage({
             {mode === "forgot" && <ForgotForm sent={sent} />}
             {mode === "verify" && <VerifyForm {...verify} />}
             {mode === "reset" && <ResetForm {...reset} />}
+            {mode === "code" && <CodeForm next={next} />}
             <p className="auth__switch">
               {sw.text}{" "}
               <Link href={sw.href} className="under-hover ml-1">

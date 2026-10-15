@@ -3,8 +3,8 @@
 // Google sign-in is still mock: it only redirects. Credentials arrive in the POST body and are never
 // stored, logged or put in a URL.
 import { redirect } from "next/navigation";
-import { endSession, getRefreshToken, startSession } from "@/lib/session";
-import { login, logout, registerAccount, requestPasswordReset, resetPassword as setNewPassword } from "@/lib/user-api";
+import { codeStepToken, endCodeStep, endSession, getRefreshToken, startCodeStep, startSession } from "@/lib/session";
+import { login, logout, registerAccount, requestPasswordReset, resetPassword as setNewPassword, verifyMfa } from "@/lib/user-api";
 
 /** What an auth form shows after a refused attempt, with the values to type in again. */
 export type AuthFormState = {
@@ -31,12 +31,40 @@ export async function signIn(_prev: AuthFormState, formData: FormData): Promise<
   }
 
   switch (result.reason) {
+    case "mfa": {
+      // The password was right; the authenticator code comes on the next page.
+      await startCodeStep(result.mfaToken, result.mfaExpiresAt);
+      redirect(`/sign-in/code?${new URLSearchParams({ next: localPath(formData.get("next")) })}`);
+    }
     case "wrong":
       return { email, error: "The email or password is incorrect." };
     case "busy":
       return { email, error: "Too many attempts. Please wait a minute and try again." };
     default:
       return { email, error: "You could not be signed in right now. Please try again." };
+  }
+}
+
+/** The code step of a sign-in: the authenticator code finishes it. */
+export async function verifyCode(_prev: AuthFormState, formData: FormData): Promise<AuthFormState> {
+  const token = await codeStepToken();
+  if (!token) redirect("/sign-in?mfa=expired");
+
+  const result = await verifyMfa(token, text(formData, "code").replace(/\s/g, ""));
+  if (result.ok) {
+    await endCodeStep();
+    await startSession(result.tokens);
+    redirect(localPath(formData.get("next")));
+  }
+
+  switch (result.reason) {
+    case "wrong-code":
+      return { error: "That code is not right. Check the app shows the code for this account and try again." };
+    case "expired":
+      await endCodeStep();
+      redirect("/sign-in?mfa=expired");
+    default:
+      return { error: "You could not be signed in right now. Please try again." };
   }
 }
 

@@ -74,6 +74,8 @@ services:
       JWT_ISSUER: ${JWT_ISSUER:-fiurozz}
       JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
       JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-720h}
+      # Encrypts TOTP secrets; dev default only (base64 of 32 bytes).
+      MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY:-ZGV2LW9ubHktbWZhLWtleS0zMi1ieXRlcy1sb25nISE=}
       # The web dev server, for the links in emails.
       WEB_URL: ${WEB_URL:-http://localhost:3000}
       # Azurite's well-known development account (infra/compose.yaml); the outbox relay writes the

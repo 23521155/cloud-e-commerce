@@ -344,3 +344,57 @@ func TestResetPassword(t *testing.T) {
 		t.Errorf("older link error = %v", err)
 	}
 }
+
+func TestTOTPAndChallenges(t *testing.T) {
+	repo := newTestRepo(t)
+	u := newUser(t, repo)
+	ctx := context.Background()
+
+	if _, err := repo.Create(ctx, u, testVerification(u)); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := repo.SaveTOTPSecret(ctx, u.ID, []byte("sealed")); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.EnableTOTP(ctx, u.ID, 100); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := repo.FindByID(ctx, u.ID)
+	if string(got.TOTPSecretSealed) != "sealed" || got.TOTPEnabledAt == nil || got.TOTPLastStep == nil || *got.TOTPLastStep != 100 {
+		t.Errorf("after enabling: %+v", got)
+	}
+	if err := repo.SaveTOTPSecret(ctx, u.ID, []byte("other")); !errors.Is(err, ErrMFAAlreadyOn) {
+		t.Errorf("new secret while on: %v, want ErrMFAAlreadyOn", err)
+	}
+
+	for _, tc := range []struct {
+		step int64
+		want bool
+	}{{100, false}, {99, false}, {101, true}, {101, false}} {
+		if ok, err := repo.UseTOTPStep(ctx, u.ID, tc.step); err != nil || ok != tc.want {
+			t.Errorf("UseTOTPStep(%d) = %v, %v; want %v", tc.step, ok, err, tc.want)
+		}
+	}
+
+	_, hash, _ := newSecret()
+	if err := repo.CreateMFAChallenge(ctx, MFAChallenge{UserID: u.ID, TokenHash: hash, DeviceName: "Firefox", ExpiresAt: time.Now().Add(time.Minute)}); err != nil {
+		t.Fatal(err)
+	}
+	c, err := repo.FindMFAChallenge(ctx, hash)
+	if err != nil || c.UserID != u.ID || c.Attempts != 0 {
+		t.Fatalf("FindMFAChallenge = %+v, %v", c, err)
+	}
+	if n, err := repo.CountMFAAttempt(ctx, c.ID); err != nil || n != 1 {
+		t.Errorf("CountMFAAttempt = %d, %v", n, err)
+	}
+	if ok, _ := repo.UseMFAChallenge(ctx, c.ID); !ok {
+		t.Error("first use refused")
+	}
+	if ok, _ := repo.UseMFAChallenge(ctx, c.ID); ok {
+		t.Error("second use accepted")
+	}
+	if _, err := repo.CountMFAAttempt(ctx, c.ID); !errors.Is(err, ErrInvalidChallenge) {
+		t.Errorf("attempt on a used step: %v, want ErrInvalidChallenge", err)
+	}
+}

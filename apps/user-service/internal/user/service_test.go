@@ -28,6 +28,8 @@ type fakeStore struct {
 	outbox      []outbox.Message
 
 	refresh []*RefreshToken
+
+	challenges []*MFAChallenge
 }
 
 func (f *fakeStore) CreateRefreshToken(ctx context.Context, t RefreshToken) error {
@@ -118,6 +120,80 @@ func (f *fakeStore) ResetPassword(ctx context.Context, hash []byte, passwordHash
 		return f.RevokeAllSessions(ctx, t.UserID)
 	}
 	return ErrInvalidEmailToken
+}
+
+func (f *fakeStore) byID(id string) (string, User, bool) {
+	for email, u := range f.users {
+		if u.ID == id {
+			return email, u, true
+		}
+	}
+	return "", User{}, false
+}
+
+func (f *fakeStore) SaveTOTPSecret(ctx context.Context, userID string, sealed []byte) error {
+	email, u, ok := f.byID(userID)
+	if !ok {
+		return ErrNotFound
+	}
+	if u.TOTPEnabledAt != nil {
+		return ErrMFAAlreadyOn
+	}
+	u.TOTPSecretSealed, u.TOTPLastStep = sealed, nil
+	f.users[email] = u
+	return nil
+}
+
+func (f *fakeStore) EnableTOTP(ctx context.Context, userID string, step int64) error {
+	email, u, _ := f.byID(userID)
+	now := time.Now()
+	u.TOTPEnabledAt, u.TOTPLastStep = &now, &step
+	f.users[email] = u
+	return nil
+}
+
+func (f *fakeStore) UseTOTPStep(ctx context.Context, userID string, step int64) (bool, error) {
+	email, u, _ := f.byID(userID)
+	if u.TOTPLastStep != nil && *u.TOTPLastStep >= step {
+		return false, nil
+	}
+	u.TOTPLastStep = &step
+	f.users[email] = u
+	return true, nil
+}
+
+func (f *fakeStore) CreateMFAChallenge(ctx context.Context, c MFAChallenge) error {
+	c.ID = int64(len(f.challenges) + 1)
+	f.challenges = append(f.challenges, &c)
+	return nil
+}
+
+func (f *fakeStore) FindMFAChallenge(ctx context.Context, hash []byte) (MFAChallenge, error) {
+	for _, c := range f.challenges {
+		if string(c.TokenHash) == string(hash) {
+			return *c, nil
+		}
+	}
+	return MFAChallenge{}, ErrNotFound
+}
+
+func (f *fakeStore) CountMFAAttempt(ctx context.Context, id int64) (int, error) {
+	c := f.challenges[id-1]
+	if c.UsedAt != nil {
+		return 0, ErrInvalidChallenge
+	}
+	c.Attempts++
+	return c.Attempts, nil
+}
+
+func (f *fakeStore) UseMFAChallenge(ctx context.Context, id int64) (bool, error) {
+	c := f.challenges[id-1]
+	if c.UsedAt != nil {
+		return false, nil
+	}
+	now := time.Now()
+	c.UsedAt = &now
+	return true, nil
 }
 
 func (f *fakeStore) UpdatePassword(ctx context.Context, id, hash string) error {

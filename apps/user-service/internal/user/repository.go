@@ -22,6 +22,7 @@ const (
 var columns = []string{
 	"id", "email", "password_hash", "name", "role", "email_verified_at", "created_at", "updated_at",
 	"phone", "address", "city", "postal_code", "country",
+	"totp_secret_enc", "totp_enabled_at", "totp_last_step",
 }
 
 // userColumns is columns for a SELECT.

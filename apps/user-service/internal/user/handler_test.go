@@ -75,6 +75,21 @@ func (f *fakeAccounts) ResetPassword(ctx context.Context, token, password string
 	return f.err
 }
 
+func (f *fakeAccounts) SetupTOTP(ctx context.Context, id string) (TOTPSetup, error) {
+	f.gotID = id
+	return TOTPSetup{Secret: "JBSWY3DPEHPK3PXP", URL: "otpauth://totp/Marginalleya:reader@example.com?secret=JBSWY3DPEHPK3PXP"}, f.err
+}
+
+func (f *fakeAccounts) ConfirmTOTP(ctx context.Context, id, code string) error {
+	f.gotID, f.gotPass = id, code
+	return f.err
+}
+
+func (f *fakeAccounts) VerifyMFA(ctx context.Context, token, code string) (User, Tokens, error) {
+	f.gotRefresh, f.gotPass = token, code
+	return f.user, f.tokens, f.err
+}
+
 func (f *fakeAccounts) Logout(ctx context.Context, refreshToken string) error {
 	f.gotRefresh = refreshToken
 	return f.err
@@ -459,5 +474,60 @@ func TestResetPasswordHandler(t *testing.T) {
 	w = send(t, &fakeAccounts{err: ErrInvalidEmailToken}, http.MethodPost, "/auth/reset-password", `{"token":"used","password":"a new password"}`, nil)
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("used link: status = %d, want 400", w.Code)
+	}
+}
+
+func TestLoginAsksForACode(t *testing.T) {
+
+	svc := &fakeAccounts{err: &MFARequiredError{Token: "challenge", ExpiresAt: time.Date(2026, 10, 16, 9, 5, 0, 0, time.UTC)}}
+
+	w := send(t, svc, http.MethodPost, "/auth/login", `{"email":"a@example.com","password":"right"}`, nil)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d; body %s", w.Code, w.Body)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `"mfaRequired":true`) || !strings.Contains(body, `"mfaToken":"challenge"`) || strings.Contains(body, "accessToken") {
+		t.Errorf("body = %s, want the code step and no tokens", body)
+	}
+}
+
+func TestTOTPHandlers(t *testing.T) {
+
+	signedIn := map[string]string{"X-User-ID": "u1"}
+
+	w := send(t, &fakeAccounts{}, http.MethodPost, "/me/mfa/totp/setup", "", signedIn)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"otpauthUrl":"otpauth://totp/`) {
+		t.Errorf("setup: %d %s", w.Code, w.Body)
+	}
+
+	svc := &fakeAccounts{}
+	w = send(t, svc, http.MethodPost, "/me/mfa/totp/confirm", `{"code":"123456"}`, signedIn)
+	if w.Code != http.StatusNoContent || svc.gotPass != "123456" {
+		t.Errorf("confirm: %d, code %q", w.Code, svc.gotPass)
+	}
+
+	w = send(t, &fakeAccounts{err: ErrWrongCode}, http.MethodPost, "/me/mfa/totp/confirm", `{"code":"000000"}`, signedIn)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("wrong code: %d, want 400", w.Code)
+	}
+
+	w = send(t, &fakeAccounts{}, http.MethodPost, "/me/mfa/totp/setup", "", nil)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("setup signed out: %d, want 401", w.Code)
+	}
+}
+
+func TestVerifyMFAHandler(t *testing.T) {
+
+	svc := &fakeAccounts{user: User{ID: "u1"}, tokens: Tokens{Access: token.Access{Token: "jwt"}, Refresh: "r"}}
+	w := send(t, svc, http.MethodPost, "/auth/mfa/verify", `{"mfaToken":"challenge","code":"123456"}`, nil)
+	if w.Code != http.StatusOK || svc.gotRefresh != "challenge" || svc.gotPass != "123456" || !strings.Contains(w.Body.String(), `"accessToken":"jwt"`) {
+		t.Errorf("verify: %d %s", w.Code, w.Body)
+	}
+
+	w = send(t, &fakeAccounts{err: ErrInvalidChallenge}, http.MethodPost, "/auth/mfa/verify", `{"mfaToken":"old","code":"1"}`, nil)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expired step: %d, want 401", w.Code)
 	}
 }

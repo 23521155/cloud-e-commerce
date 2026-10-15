@@ -7,6 +7,8 @@ import { refreshSession, type SessionTokens } from "@/lib/user-api";
 // new one (src/proxy.ts does that before a page renders).
 export const ACCESS_COOKIE = "session";
 export const REFRESH_COOKIE = "refresh";
+/** Between the password and the authenticator code of a sign-in: the code step's token. */
+export const MFA_COOKIE = "mfa";
 
 /** Who is signed in, read from the access token's claims. */
 export type Session = {
@@ -100,4 +102,23 @@ export async function renewSession(): Promise<void> {
 export async function authHeader(): Promise<Record<string, string>> {
   const session = await getSession();
   return session ? { Authorization: `Bearer ${session.token}` } : {};
+}
+
+/** Keeps the code step of a sign-in until the reader types the code. */
+export async function startCodeStep(mfaToken: string, expiresAt: string) {
+  (await cookies()).set(MFA_COOKIE, mfaToken, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    expires: new Date(expiresAt),
+  });
+}
+
+export async function codeStepToken(): Promise<string | undefined> {
+  return (await cookies()).get(MFA_COOKIE)?.value;
+}
+
+export async function endCodeStep() {
+  (await cookies()).delete(MFA_COOKIE);
 }

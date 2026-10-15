@@ -34,6 +34,10 @@ type Config struct {
 	// WebURL is the web app's public address, for the links in emails.
 	WebURL string
 
+	// MFAEncryptionKey encrypts TOTP secrets: base64 of 32 random bytes.
+	// Empty: two-step sign-in cannot be set up.
+	MFAEncryptionKey string
+
 	// StorageConnectionString is the Azure Storage account whose queues
 	// carry the outbox messages (Azurite locally). Empty: messages wait in
 	// the outbox table.
@@ -63,6 +67,8 @@ func Load() (*Config, error) {
 		WebURL: strings.TrimRight(getEnv("WEB_URL", "http://localhost:3000"), "/"),
 
 		StorageConnectionString: os.Getenv("STORAGE_CONNECTION_STRING"),
+
+		MFAEncryptionKey: os.Getenv("MFA_ENCRYPTION_KEY"),
 	}
 
 	ttl, err := time.ParseDuration(getEnv("JWT_ACCESS_TTL", "15m"))

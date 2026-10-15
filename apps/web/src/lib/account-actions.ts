@@ -3,8 +3,16 @@
 // Form data stays in the POST body; passwords are never stored, logged or put in a URL. Outcomes
 // come back to /account as a code in the query string.
 import { redirect } from "next/navigation";
+import QRCode from "qrcode";
 import { getSession, renewSession, startSession } from "@/lib/session";
-import { changePassword as savePassword, resendVerification as sendLinkAgain, updateProfile as saveProfile, verifyEmail as confirmEmail } from "@/lib/user-api";
+import {
+  changePassword as savePassword,
+  confirmTotp,
+  resendVerification as sendLinkAgain,
+  setupTotp,
+  updateProfile as saveProfile,
+  verifyEmail as confirmEmail,
+} from "@/lib/user-api";
 
 const text = (formData: FormData, name: string) => String(formData.get(name) ?? "").trim();
 
@@ -85,5 +93,56 @@ export async function resendVerification() {
       redirect("/account?error=verify-too-soon");
     default:
       redirect("/account?error=verify-failed");
+  }
+}
+
+/** The two-step sign-in slip while it is being set up: the QR code to scan, or why it failed. */
+export type TotpSetupState = { qr?: string; secret?: string; error?: string };
+
+/** Starts setup: a new secret, shown as a QR code for the authenticator app and as text. */
+export async function startTotpSetup(): Promise<TotpSetupState> {
+  const session = await getSession();
+  if (!session) redirect("/sign-in?next=/account");
+
+  const result = await setupTotp(session.token);
+  if (result.ok) {
+    // Drawn here so the secret never goes to a third-party QR service.
+    const qr = await QRCode.toDataURL(result.otpauthUrl, { margin: 1, width: 220 });
+    return { qr, secret: result.secret };
+  }
+
+  switch (result.reason) {
+    case "signed-out":
+      redirect("/sign-in?next=/account");
+    case "already-on":
+      redirect("/account");
+    case "unavailable":
+      return { error: "Two-step sign-in is not available right now." };
+    default:
+      return { error: "Setup could not start right now. Please try again in a moment." };
+  }
+}
+
+/** Finishes setup with a first code from the app. */
+export async function confirmTotpSetup(_prev: TotpSetupState, formData: FormData): Promise<TotpSetupState> {
+  const session = await getSession();
+  if (!session) redirect("/sign-in?next=/account");
+
+  const shown = { qr: String(formData.get("qr") ?? ""), secret: String(formData.get("secret") ?? "") };
+
+  const code = String(formData.get("code") ?? "").replace(/\s/g, "");
+  const result = await confirmTotp(session.token, code);
+  if (result.ok) redirect("/account?saved=mfa-on#two-step");
+
+  switch (result.reason) {
+    case "signed-out":
+      redirect("/sign-in?next=/account");
+    case "wrong-code":
+      // Keep the QR code on screen for another try; the form carries it back.
+      return { ...shown, error: "That code is not right. Type the code the app shows now." };
+    case "conflict":
+      redirect("/account#two-step");
+    default:
+      return { ...shown, error: "Two-step sign-in could not be turned on right now. Please try again." };
   }
 }

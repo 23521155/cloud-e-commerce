@@ -14,6 +14,7 @@ import (
 	"github.com/fizzisme/user-service/internal/logger"
 	"github.com/fizzisme/user-service/internal/outbox"
 	"github.com/fizzisme/user-service/internal/router"
+	"github.com/fizzisme/user-service/internal/secretbox"
 	"github.com/fizzisme/user-service/internal/token"
 	"github.com/fizzisme/user-service/internal/user"
 	"go.uber.org/zap"
@@ -65,10 +66,27 @@ func main() {
 		)
 	}
 
-	userHandler := user.NewHandler(user.NewService(user.NewRepository(db), tokens, user.Options{
+	options := user.Options{
 		RefreshTTL: cfg.RefreshTokenTTL,
 		WebURL:     cfg.WebURL,
-	}), logger.Log)
+	}
+
+	// TOTP secrets are kept encrypted; without the key two-step sign-in
+	// cannot be set up, and accounts that have it cannot finish signing in.
+	if cfg.MFAEncryptionKey == "" {
+		logger.Log.Warn("MFA_ENCRYPTION_KEY is not set: two-step sign-in is off")
+	} else {
+		box, err := secretbox.New(cfg.MFAEncryptionKey)
+		if err != nil {
+			logger.Log.Fatal(
+				"invalid MFA_ENCRYPTION_KEY",
+				zap.Error(err),
+			)
+		}
+		options.Box = box
+	}
+
+	userHandler := user.NewHandler(user.NewService(user.NewRepository(db), tokens, options), logger.Log)
 
 	// Emails and events (outbox.QueueEmail, outbox.QueueUserEmailVerified)
 	// wait in the outbox table until a relay puts them on their queues.

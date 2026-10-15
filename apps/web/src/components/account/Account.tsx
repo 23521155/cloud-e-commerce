@@ -1,4 +1,5 @@
 import { PasswordField, SubmitButton } from "@/components/auth/AuthClient";
+import { TwoStepSetup } from "@/components/account/TwoStep";
 import { changePassword, resendVerification, updateProfile } from "@/lib/account-actions";
 
 export type Profile = {
@@ -11,7 +12,7 @@ export type Profile = {
   country: string;
 };
 
-export type SavedNotice = "profile" | "password" | "verify-sent";
+export type SavedNotice = "profile" | "password" | "verify-sent" | "mfa-on";
 
 /** Why the ledger page or the password slip was not saved; nothing changed. */
 export type AccountError = keyof typeof ACCOUNT_ERROR;
@@ -60,7 +61,22 @@ function Entry({ label, name, className = "", ...input }: { label: string; name:
 }
 
 /** Account settings as an open ledger: details across two pages, the password on a loose slip below. */
-export function Account({ profile, emailVerified, saved, error }: { profile: Profile; emailVerified: boolean; saved?: SavedNotice; error?: AccountError }) {
+const sinceFormat = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric" });
+
+export function Account({
+  profile,
+  emailVerified,
+  twoStepSince,
+  saved,
+  error,
+}: {
+  profile: Profile;
+  emailVerified: boolean;
+  /** When two-step sign-in was turned on; null while off. */
+  twoStepSince: string | null;
+  saved?: SavedNotice;
+  error?: AccountError;
+}) {
   return (
     <div className="ledger">
       <form action={updateProfile} className="ledger__form">
@@ -131,6 +147,21 @@ export function Account({ profile, emailVerified, saved, error }: { profile: Pro
           <PasswordField label="Again" name="confirm" autoComplete="new-password" match="password" />
           <SubmitButton pending="Changing…">Change password</SubmitButton>
         </form>
+      </section>
+
+      <section className="ledger__slip ledger__slip--second" aria-labelledby="ledger-two-step">
+        <span id="two-step" className="ledger__slip-anchor" aria-hidden="true" />
+        <h2 id="ledger-two-step" className="ledger__slip-head">
+          Another slip: <em>two-step sign-in</em>
+        </h2>
+        <Notice show={saved === "mfa-on"}>Two-step sign-in is on. Signing in now also asks for a code from your app.</Notice>
+        {twoStepSince ? (
+          <p className="m-0">
+            On since {sinceFormat.format(new Date(twoStepSince))}. Signing in asks for a code from your authenticator app as well as your password.
+          </p>
+        ) : (
+          <TwoStepSetup />
+        )}
       </section>
     </div>
   );

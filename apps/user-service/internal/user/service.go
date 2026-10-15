@@ -65,6 +65,7 @@ type store interface {
 	sessionStore
 	verificationStore
 	resetStore
+	mfaStore
 }
 
 // issuer signs access tokens; *token.Issuer outside tests.
@@ -83,6 +84,9 @@ type Service struct {
 	// webURL is the shop's address, for the links in emails.
 	webURL string
 
+	// box keeps TOTP secrets encrypted; nil turns two-step sign-in off.
+	box sealer
+
 	// now is time.Now outside tests.
 	now func() time.Time
 }
@@ -95,10 +99,13 @@ type Options struct {
 	// WebURL is the web app's address (no trailing slash), for the links
 	// in emails.
 	WebURL string
+
+	// Box encrypts TOTP secrets. Nil: two-step sign-in cannot be set up.
+	Box sealer
 }
 
 func NewService(store store, tokens issuer, o Options) *Service {
-	return &Service{store: store, tokens: tokens, refreshTTL: o.RefreshTTL, webURL: o.WebURL, now: time.Now}
+	return &Service{store: store, tokens: tokens, refreshTTL: o.RefreshTTL, webURL: o.WebURL, box: o.Box, now: time.Now}
 }
 
 // RegisterInput is a new account as the user typed it.
@@ -175,6 +182,11 @@ func (s *Service) Login(ctx context.Context, email, password, device string) (Us
 	}
 	if !ok {
 		return User{}, Tokens{}, ErrInvalidCredentials
+	}
+
+	// With two-step sign-in on, the password only opens the code step.
+	if u.TOTPEnabledAt != nil {
+		return User{}, Tokens{}, s.challenge(ctx, u, device)
 	}
 
 	tokens, err := s.startSession(ctx, u, device)

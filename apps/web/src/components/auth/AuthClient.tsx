@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
-import { register, signIn, type AuthFormState } from "@/lib/auth-actions";
+import { register, signIn, verifyCode, type AuthFormState } from "@/lib/auth-actions";
 
 /** Text input on the index card; required unless told otherwise. */
 export function TextField({ label, ...input }: { label: string } & React.InputHTMLAttributes<HTMLInputElement>) {
@@ -126,6 +126,28 @@ export function RegisterForm() {
       <PasswordField label="Password" name="password" autoComplete="new-password" minLength={8} hint="At least 8 characters." />
       <PasswordField label="Confirm password" name="confirm" autoComplete="new-password" match="password" />
       <SubmitButton pending="Creating account…">Create account</SubmitButton>
+    </form>
+  );
+}
+
+/** The code step of a sign-in: six digits from the reader's authenticator app. */
+export function CodeForm({ next }: { next?: string }) {
+  const [state, formAction] = useActionState<AuthFormState, FormData>(verifyCode, {});
+  return (
+    <form action={formAction} className="auth__form">
+      <FormError error={state.error} />
+      {next && <input type="hidden" name="next" value={next} />}
+      <TextField
+        label="Code from your authenticator app"
+        name="code"
+        inputMode="numeric"
+        autoComplete="one-time-code"
+        pattern="\s*\d{3}\s*\d{3}\s*"
+        maxLength={7}
+        placeholder="123456"
+        autoFocus
+      />
+      <SubmitButton pending="Checking…">Sign in</SubmitButton>
     </form>
   );
 }

@@ -23,6 +23,13 @@ type User struct {
 	CreatedAt       time.Time  `db:"created_at" json:"createdAt"`
 	UpdatedAt       time.Time  `db:"updated_at" json:"-"`
 
+	// TOTPSecretSealed is the authenticator secret, encrypted; set once
+	// setup starts. TOTPEnabledAt is when a first code confirmed it: from
+	// then on sign-in asks for a code.
+	TOTPSecretSealed []byte     `db:"totp_secret_enc" json:"-"`
+	TOTPEnabledAt    *time.Time `db:"totp_enabled_at" json:"totpEnabledAt"`
+	TOTPLastStep     *int64     `db:"totp_last_step" json:"-"`
+
 	Profile
 }
 

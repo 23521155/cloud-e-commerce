@@ -18,6 +18,8 @@ export type Account = {
   createdAt: string;
   /** When the reader confirmed the address; null until then. */
   emailVerifiedAt: string | null;
+  /** When two-step sign-in was turned on; null while it is off. */
+  totpEnabledAt: string | null;
 } & ProfileDetails;
 
 export type RegisterResult =
@@ -70,6 +72,8 @@ const tokensOf = ({ accessToken, expiresAt, refreshToken, refreshExpiresAt }: To
 
 export type LoginResult =
   | { ok: true; tokens: SessionTokens; account: Account }
+  /** The password was right and the account asks for an authenticator code: send it with mfaToken. */
+  | { ok: false; reason: "mfa"; mfaToken: string; mfaExpiresAt: string }
   /** The email or the password is wrong; which one is not told. */
   | { ok: false; reason: "wrong" }
   | { ok: false; reason: "busy" }
@@ -90,7 +94,8 @@ export async function login(email: string, password: string): Promise<LoginResul
   }
 
   if (res.ok) {
-    const body = (await res.json()) as TokensBody;
+    const body = (await res.json()) as TokensBody | { mfaRequired: true; mfaToken: string; mfaExpiresAt: string };
+    if ("mfaRequired" in body) return { ok: false, reason: "mfa", mfaToken: body.mfaToken, mfaExpiresAt: body.mfaExpiresAt };
     return { ok: true, tokens: tokensOf(body), account: body.user };
   }
   if (res.status === 401) return { ok: false, reason: "wrong" };
@@ -320,6 +325,83 @@ export async function resetPassword(token: string, password: string): Promise<Re
     const body = (await res.json().catch(() => ({}))) as { error?: string };
     return { ok: false, reason: body.error?.startsWith("invalid input:") ? "weak" : "invalid-link" };
   }
+
+  return { ok: false, reason: "failed" };
+}
+
+export type VerifyCodeResult =
+  | { ok: true; tokens: SessionTokens }
+  | { ok: false; reason: "wrong-code" }
+  /** The code step ran out of time or of tries: sign in again. */
+  | { ok: false; reason: "expired" }
+  | { ok: false; reason: "failed" };
+
+/** POST /api/users/auth/mfa/verify: finishes a sign-in with an authenticator code. */
+export async function verifyMfa(mfaToken: string, code: string): Promise<VerifyCodeResult> {
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/auth/mfa/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(await forwardedFor()) },
+      body: JSON.stringify({ mfaToken, code }),
+      cache: "no-store",
+    });
+  } catch {
+    return { ok: false, reason: "failed" };
+  }
+
+  if (res.ok) return { ok: true, tokens: tokensOf((await res.json()) as TokensBody) };
+  if (res.status === 400) return { ok: false, reason: "wrong-code" };
+  if (res.status === 401) return { ok: false, reason: "expired" };
+
+  return { ok: false, reason: "failed" };
+}
+
+export type TotpSetupResult =
+  | { ok: true; secret: string; otpauthUrl: string }
+  | { ok: false; reason: "already-on" | "unavailable" | "signed-out" | "failed" };
+
+/** POST /api/users/me/mfa/totp/setup: a new secret for the reader's authenticator app. */
+export async function setupTotp(accessToken: string): Promise<TotpSetupResult> {
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/me/mfa/totp/setup`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}`, ...(await forwardedFor()) },
+      cache: "no-store",
+    });
+  } catch {
+    return { ok: false, reason: "failed" };
+  }
+
+  if (res.ok) return { ok: true, ...((await res.json()) as { secret: string; otpauthUrl: string }) };
+  if (res.status === 409) return { ok: false, reason: "already-on" };
+  if (res.status === 503) return { ok: false, reason: "unavailable" };
+  if (res.status === 401) return { ok: false, reason: "signed-out" };
+
+  return { ok: false, reason: "failed" };
+}
+
+export type TotpConfirmResult = { ok: true } | { ok: false; reason: "wrong-code" | "conflict" | "signed-out" | "failed" };
+
+/** POST /api/users/me/mfa/totp/confirm: turns two-step sign-in on with a first code. */
+export async function confirmTotp(accessToken: string, code: string): Promise<TotpConfirmResult> {
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/me/mfa/totp/confirm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}`, ...(await forwardedFor()) },
+      body: JSON.stringify({ code }),
+      cache: "no-store",
+    });
+  } catch {
+    return { ok: false, reason: "failed" };
+  }
+
+  if (res.status === 204) return { ok: true };
+  if (res.status === 400) return { ok: false, reason: "wrong-code" };
+  if (res.status === 409) return { ok: false, reason: "conflict" };
+  if (res.status === 401) return { ok: false, reason: "signed-out" };
 
   return { ok: false, reason: "failed" };
 }
