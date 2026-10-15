@@ -277,3 +277,49 @@ export async function resendVerification(accessToken: string): Promise<ResendRes
 
   return { ok: false, reason: "failed" };
 }
+
+/** POST /api/users/auth/forgot-password. The answer is the same whether or not the address has an account. */
+export async function requestPasswordReset(email: string): Promise<{ ok: boolean }> {
+  try {
+    const res = await fetch(`${BASE}/auth/forgot-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(await forwardedFor()) },
+      body: JSON.stringify({ email }),
+      cache: "no-store",
+    });
+    return { ok: res.status === 202 };
+  } catch {
+    return { ok: false };
+  }
+}
+
+export type ResetPasswordResult =
+  | { ok: true }
+  /** The link was used already or has expired. */
+  | { ok: false; reason: "invalid-link" }
+  /** The new password was refused. */
+  | { ok: false; reason: "weak" }
+  | { ok: false; reason: "failed" };
+
+/** POST /api/users/auth/reset-password with the token from the emailed link. */
+export async function resetPassword(token: string, password: string): Promise<ResetPasswordResult> {
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/auth/reset-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(await forwardedFor()) },
+      body: JSON.stringify({ token, password }),
+      cache: "no-store",
+    });
+  } catch {
+    return { ok: false, reason: "failed" };
+  }
+
+  if (res.status === 204) return { ok: true };
+  if (res.status === 400) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    return { ok: false, reason: body.error?.startsWith("invalid input:") ? "weak" : "invalid-link" };
+  }
+
+  return { ok: false, reason: "failed" };
+}

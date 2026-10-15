@@ -84,14 +84,17 @@ function FormError({ error }: { error?: string }) {
   );
 }
 
-/** Sign-in form: a refused attempt shows why and keeps the email. next is where to go once signed in. */
-export function SignInForm({ registered, next }: { registered: boolean; next?: string }) {
+/**
+ * Sign-in form: a refused attempt shows why and keeps the email. next is where to go once signed in;
+ * notice is a line above the form (after registering, or after a password reset).
+ */
+export function SignInForm({ notice, next }: { notice?: string; next?: string }) {
   const [state, formAction] = useActionState<AuthFormState, FormData>(signIn, {});
   return (
     <form action={formAction} className="auth__form">
-      {registered && !state.error && (
+      {notice && !state.error && (
         <p role="status" className="auth__sent m-0">
-          Your account is ready. Sign in to continue.
+          {notice}
         </p>
       )}
       <FormError error={state.error} />

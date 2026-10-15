@@ -234,3 +234,49 @@ WHERE id = @id AND email = @email`,
 
 	return u, tx.Commit()
 }
+
+// ResetPassword uses a reset-password token, sets the new password hash and
+// revokes every session of the account, in one transaction.
+func (r *Repository) ResetPassword(ctx context.Context, hash []byte, passwordHash string) error {
+
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var userID string
+	err = tx.GetContext(ctx, &userID, `
+UPDATE email_tokens SET used_at = SYSUTCDATETIME()
+OUTPUT inserted.user_id
+WHERE token_hash = @hash AND purpose = @purpose AND used_at IS NULL AND expires_at > SYSUTCDATETIME()`,
+		sql.Named("hash", hash), sql.Named("purpose", PurposeResetPassword))
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrInvalidEmailToken
+	}
+	if err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+UPDATE users SET password_hash = @hash, updated_at = SYSUTCDATETIME() WHERE id = @id`,
+		sql.Named("id", userID), sql.Named("hash", passwordHash)); err != nil {
+		return err
+	}
+
+	// Other reset links of the account stop working too.
+	if _, err := tx.ExecContext(ctx, `
+UPDATE email_tokens SET used_at = SYSUTCDATETIME()
+WHERE user_id = @id AND purpose = @purpose AND used_at IS NULL`,
+		sql.Named("id", userID), sql.Named("purpose", PurposeResetPassword)); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+UPDATE refresh_tokens SET revoked_at = SYSUTCDATETIME()
+WHERE user_id = @id AND revoked_at IS NULL`, sql.Named("id", userID)); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}

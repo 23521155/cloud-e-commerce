@@ -1,10 +1,20 @@
 import Link from "next/link";
-import { RegisterForm, SignInForm, SubmitButton, TextField } from "@/components/auth/AuthClient";
+import { PasswordField, RegisterForm, SignInForm, SubmitButton, TextField } from "@/components/auth/AuthClient";
 import { BookCover } from "@/components/ui/BookArt";
 import { verifyEmail } from "@/lib/account-actions";
-import { continueWithGoogle, requestReset } from "@/lib/auth-actions";
+import { continueWithGoogle, requestReset, resetPassword } from "@/lib/auth-actions";
 
-export type AuthMode = "sign-in" | "register" | "forgot" | "verify";
+export type AuthMode = "sign-in" | "register" | "forgot" | "verify" | "reset";
+
+/** The reset page's state: the token from the link, and why the last try was refused. */
+export type ResetState = { token?: string; error?: "invalid-link" | "weak" | "mismatch" | "failed" };
+
+const RESET_ERROR: Record<NonNullable<ResetState["error"]>, string> = {
+  "invalid-link": "This link has already been used or has expired. Ask for a new one below.",
+  weak: "The new password must be 8 to 128 characters.",
+  mismatch: "The new password and the repeat do not match.",
+  failed: "The password could not be changed right now. Please try again in a moment.",
+};
 
 /** The confirmation page's state: the token from the link, or how confirming went. */
 export type VerifyState = { token?: string; done?: boolean; error?: "invalid" | "failed" };
@@ -33,10 +43,10 @@ function Divider() {
   );
 }
 
-function SignIn({ registered, next }: { registered: boolean; next?: string }) {
+function SignIn({ notice, next }: { notice?: string; next?: string }) {
   return (
     <>
-      <SignInForm registered={registered} next={next} />
+      <SignInForm notice={notice} next={next} />
       <Divider />
       <GoogleButton label="Continue with Google" />
     </>
@@ -56,6 +66,37 @@ function ForgotForm({ sent }: { sent: boolean }) {
     <form action={requestReset} className="auth__form">
       <TextField label="Email" name="email" type="email" autoComplete="email" placeholder="you@example.com" />
       <SubmitButton pending="Sending…">Send reset link</SubmitButton>
+    </form>
+  );
+}
+
+function ResetForm({ token, error }: ResetState) {
+  const refused = error && (
+    <p role="alert" className="auth__error m-0">
+      {RESET_ERROR[error]}
+    </p>
+  );
+  if (!token) {
+    return (
+      <div className="auth__form">
+        {refused ?? (
+          <p role="alert" className="auth__error m-0">
+            This page needs the link from the email. Please open it from there.
+          </p>
+        )}
+        <Link href="/forgot-password" className="auth__aside under-hover">
+          Send me a new link
+        </Link>
+      </div>
+    );
+  }
+  return (
+    <form action={resetPassword} className="auth__form">
+      {refused}
+      <input type="hidden" name="token" value={token} />
+      <PasswordField label="New password" name="password" autoComplete="new-password" minLength={8} hint="At least 8 characters." />
+      <PasswordField label="Confirm password" name="confirm" autoComplete="new-password" match="password" />
+      <SubmitButton pending="Saving…">Set the new password</SubmitButton>
     </form>
   );
 }
@@ -97,6 +138,7 @@ const COPY: Record<AuthMode, { card: string; title: [string, string]; intro: str
   register: { card: "New reader", title: ["Open an", "account"], intro: "Keep a basket across devices and follow your orders." },
   forgot: { card: "Lost card", title: ["Reset your", "password"], intro: "Enter the email you signed up with and we will send a reset link." },
   verify: { card: "Reader's card", title: ["Confirm your", "email"], intro: "One click, and the shop knows this address is yours." },
+  reset: { card: "Lost card", title: ["Choose a new", "password"], intro: "Every device you were signed in on will be signed out." },
 };
 
 const SWITCH: Record<AuthMode, { text: string; link: string; href: string }> = {
@@ -104,6 +146,7 @@ const SWITCH: Record<AuthMode, { text: string; link: string; href: string }> = {
   register: { text: "Already have an account?", link: "Sign in", href: "/sign-in" },
   forgot: { text: "Remembered it?", link: "Back to sign in", href: "/sign-in" },
   verify: { text: "Done here?", link: "Go to your account", href: "/account" },
+  reset: { text: "Remembered it?", link: "Back to sign in", href: "/sign-in" },
 };
 
 const SHELF = [
@@ -116,15 +159,18 @@ const SHELF = [
 export function AuthPage({
   mode,
   sent = false,
-  registered = false,
+  notice,
   next,
   verify,
+  reset,
 }: {
   mode: AuthMode;
   sent?: boolean;
-  registered?: boolean;
+  /** A line above the sign-in form. */
+  notice?: string;
   next?: string;
   verify?: VerifyState;
+  reset?: ResetState;
 }) {
   const copy = COPY[mode];
   const sw = SWITCH[mode];
@@ -156,10 +202,11 @@ export function AuthPage({
             <span>Marginalleya</span>
           </div>
           <div className="auth__body">
-            {mode === "sign-in" && <SignIn registered={registered} next={next} />}
+            {mode === "sign-in" && <SignIn notice={notice} next={next} />}
             {mode === "register" && <RegisterForm />}
             {mode === "forgot" && <ForgotForm sent={sent} />}
             {mode === "verify" && <VerifyForm {...verify} />}
+            {mode === "reset" && <ResetForm {...reset} />}
             <p className="auth__switch">
               {sw.text}{" "}
               <Link href={sw.href} className="under-hover ml-1">

@@ -1,10 +1,10 @@
 "use server";
 
-// Google sign-in and password reset are still mock: each only redirects so the flow can be walked
-// through. Credentials arrive in the POST body and are never stored, logged or put in a URL.
+// Google sign-in is still mock: it only redirects. Credentials arrive in the POST body and are never
+// stored, logged or put in a URL.
 import { redirect } from "next/navigation";
 import { endSession, getRefreshToken, startSession } from "@/lib/session";
-import { login, logout, registerAccount } from "@/lib/user-api";
+import { login, logout, registerAccount, requestPasswordReset, resetPassword as setNewPassword } from "@/lib/user-api";
 
 /** What an auth form shows after a refused attempt, with the values to type in again. */
 export type AuthFormState = {
@@ -85,6 +85,29 @@ export async function continueWithGoogle() {
 }
 
 /** Same answer whether or not the address has an account, so the form cannot probe for users. */
-export async function requestReset() {
+export async function requestReset(formData: FormData) {
+  await requestPasswordReset(text(formData, "email"));
   redirect("/forgot-password?sent=1");
+}
+
+/** Sets the new password from the reset link; every device is signed out, so the reader signs in again. */
+export async function resetPassword(formData: FormData) {
+  const token = String(formData.get("token") ?? "");
+  const password = String(formData.get("password") ?? "");
+  const back = (error: string) => `/reset-password?${new URLSearchParams({ token, error })}`;
+
+  // The browser checks this too; a form posted before the page hydrated has not.
+  if (password !== String(formData.get("confirm") ?? "")) redirect(back("mismatch"));
+
+  const result = await setNewPassword(token, password);
+  if (result.ok) redirect("/sign-in?reset=1");
+
+  switch (result.reason) {
+    case "invalid-link":
+      redirect("/reset-password?error=invalid-link");
+    case "weak":
+      redirect(back("weak"));
+    default:
+      redirect(back("failed"));
+  }
 }

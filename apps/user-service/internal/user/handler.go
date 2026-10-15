@@ -34,6 +34,8 @@ type accounts interface {
 	ChangePassword(ctx context.Context, id, current, password, device string) (User, Tokens, error)
 	VerifyEmail(ctx context.Context, token string) (User, error)
 	ResendVerification(ctx context.Context, id string) error
+	RequestPasswordReset(ctx context.Context, email string) error
+	ResetPassword(ctx context.Context, token, password string) error
 }
 
 type Handler struct {
@@ -57,6 +59,8 @@ func (h *Handler) Register(api *gin.RouterGroup) {
 	api.POST("/me/password", h.changePassword)
 	api.POST("/auth/verify-email", h.verifyEmail)
 	api.POST("/me/verify-email", h.resendVerification)
+	api.POST("/auth/forgot-password", h.forgotPassword)
+	api.POST("/auth/reset-password", h.resetPassword)
 }
 
 // registerRequest is the body of POST /auth/register. Fields are checked by
@@ -334,6 +338,56 @@ func (h *Handler) resendVerification(c *gin.Context) {
 	}
 
 	c.Status(http.StatusAccepted)
+}
+
+// forgotPasswordRequest is the body of POST /auth/forgot-password.
+type forgotPasswordRequest struct {
+	Email string `json:"email"`
+}
+
+// forgotPassword always answers 202, account or not, so it cannot be used
+// to find out who has an account.
+func (h *Handler) forgotPassword(c *gin.Context) {
+
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBodyBytes)
+
+	var req forgotPasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.Email == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	if err := h.service.RequestPasswordReset(c.Request.Context(), req.Email); err != nil {
+		h.fail(c, err)
+		return
+	}
+
+	c.Status(http.StatusAccepted)
+}
+
+// resetPasswordRequest is the body of POST /auth/reset-password: the token
+// from the emailed link and the new password.
+type resetPasswordRequest struct {
+	Token    string `json:"token"`
+	Password string `json:"password"`
+}
+
+func (h *Handler) resetPassword(c *gin.Context) {
+
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBodyBytes)
+
+	var req resetPasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.Token == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	if err := h.service.ResetPassword(c.Request.Context(), req.Token, req.Password); err != nil {
+		h.fail(c, err)
+		return
+	}
+
+	c.Status(http.StatusNoContent)
 }
 
 // fail turns a service error into a response. It is the one place that

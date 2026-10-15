@@ -64,6 +64,7 @@ type store interface {
 
 	sessionStore
 	verificationStore
+	resetStore
 }
 
 // issuer signs access tokens; *token.Issuer outside tests.

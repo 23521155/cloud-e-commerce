@@ -304,3 +304,43 @@ func TestVerifyEmailExpiredLink(t *testing.T) {
 		t.Error("an expired link confirmed the address")
 	}
 }
+
+func TestResetPassword(t *testing.T) {
+	repo := newTestRepo(t)
+	u := newUser(t, repo)
+	ctx := context.Background()
+
+	if _, err := repo.Create(ctx, u, testVerification(u)); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, hash, _ := newSecret()
+	_, other, _ := newSecret()
+	for _, h := range [][]byte{hash, other} {
+		if err := repo.CreateEmailToken(ctx, EmailToken{UserID: u.ID, Purpose: PurposeResetPassword, Email: u.Email, TokenHash: h, ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, session, _ := newSecret()
+	if err := repo.CreateRefreshToken(ctx, RefreshToken{UserID: u.ID, FamilyID: uuid.NewString(), TokenHash: session, ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := repo.ResetPassword(ctx, hashToken(raw), "$argon2id$reset"); err != nil {
+		t.Fatal(err)
+	}
+
+	if got, _ := repo.FindByID(ctx, u.ID); got.PasswordHash != "$argon2id$reset" {
+		t.Errorf("password hash = %q", got.PasswordHash)
+	}
+	if got, _ := repo.FindRefreshToken(ctx, session); got.RevokedAt == nil {
+		t.Error("session not revoked by the reset")
+	}
+	// The link, and the other link sent earlier, are both used up.
+	if err := repo.ResetPassword(ctx, hashToken(raw), "x"); !errors.Is(err, ErrInvalidEmailToken) {
+		t.Errorf("second use error = %v", err)
+	}
+	if err := repo.ResetPassword(ctx, other, "x"); !errors.Is(err, ErrInvalidEmailToken) {
+		t.Errorf("older link error = %v", err)
+	}
+}

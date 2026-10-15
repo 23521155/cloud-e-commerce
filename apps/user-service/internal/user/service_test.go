@@ -99,6 +99,27 @@ func (f *fakeStore) VerifyEmail(ctx context.Context, hash []byte, events func(Us
 	return User{}, ErrInvalidEmailToken
 }
 
+func (f *fakeStore) ResetPassword(ctx context.Context, hash []byte, passwordHash string) error {
+	for i := range f.emailTokens {
+		t := &f.emailTokens[i]
+		if string(t.TokenHash) != string(hash) || t.Purpose != PurposeResetPassword || t.UsedAt != nil || !time.Now().Before(t.ExpiresAt) {
+			continue
+		}
+		now := time.Now()
+		for j := range f.emailTokens {
+			o := &f.emailTokens[j]
+			if o.UserID == t.UserID && o.Purpose == PurposeResetPassword && o.UsedAt == nil {
+				o.UsedAt = &now
+			}
+		}
+		if err := f.UpdatePassword(ctx, t.UserID, passwordHash); err != nil {
+			return err
+		}
+		return f.RevokeAllSessions(ctx, t.UserID)
+	}
+	return ErrInvalidEmailToken
+}
+
 func (f *fakeStore) UpdatePassword(ctx context.Context, id, hash string) error {
 	for email, u := range f.users {
 		if u.ID == id {

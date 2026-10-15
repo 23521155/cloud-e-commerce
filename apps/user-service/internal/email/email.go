@@ -40,6 +40,32 @@ var verifyHTML = template.Must(template.New("verify").Parse(`<p>Hello {{.Name}},
 <p>{{.Shop}}</p>
 `))
 
+var resetText = textTemplate.Must(textTemplate.New("reset").Parse(`Hello {{.Name}},
+
+Someone asked to reset the password of your {{.Shop}} account. To choose a new one, open:
+
+{{.URL}}
+
+The link works for 30 minutes and only once. Choosing a new password signs you out everywhere.
+If you did not ask, ignore this email: your password stays as it is.
+
+{{.Shop}}
+`))
+
+var resetHTML = template.Must(template.New("reset").Parse(`<p>Hello {{.Name}},</p>
+<p>Someone asked to reset the password of your {{.Shop}} account.</p>
+<p><a href="{{.URL}}">Choose a new password</a></p>
+<p>The link works for 30 minutes and only once. Choosing a new password signs you out everywhere.
+If you did not ask, ignore this email: your password stays as it is.</p>
+<p>{{.Shop}}</p>
+`))
+
+// ResetPassword sends the link that lets the owner of an account choose a
+// new password.
+func ResetPassword(to, name, url string) (outbox.Email, error) {
+	return render(to, "Reset your password", resetText, resetHTML, link{Name: name, URL: url, Shop: shopName})
+}
+
 // VerifyEmail asks the owner of an address to confirm it by following url.
 func VerifyEmail(to, name, url string) (outbox.Email, error) {
 	return render(to, "Confirm your email address", verifyText, verifyHTML, link{Name: name, URL: url, Shop: shopName})

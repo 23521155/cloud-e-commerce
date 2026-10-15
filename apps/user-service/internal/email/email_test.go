@@ -23,3 +23,14 @@ func TestVerifyEmail(t *testing.T) {
 		t.Errorf("html = %q", e.HTML)
 	}
 }
+
+func TestResetPassword(t *testing.T) {
+
+	e, err := ResetPassword("reader@example.com", "Reader", "http://localhost:3000/reset-password?token=abc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.To != "reader@example.com" || !strings.Contains(e.Subject, "Reset your password") || !strings.Contains(e.Text, "http://localhost:3000/reset-password?token=abc") {
+		t.Errorf("email = %+v", e)
+	}
+}

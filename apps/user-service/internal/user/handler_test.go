@@ -65,6 +65,16 @@ func (f *fakeAccounts) ResendVerification(ctx context.Context, id string) error 
 	return f.err
 }
 
+func (f *fakeAccounts) RequestPasswordReset(ctx context.Context, email string) error {
+	f.gotEmail = email
+	return f.err
+}
+
+func (f *fakeAccounts) ResetPassword(ctx context.Context, token, password string) error {
+	f.gotRefresh, f.gotNewPass = token, password
+	return f.err
+}
+
 func (f *fakeAccounts) Logout(ctx context.Context, refreshToken string) error {
 	f.gotRefresh = refreshToken
 	return f.err
@@ -425,5 +435,29 @@ func TestResendVerificationHandler(t *testing.T) {
 				t.Errorf("status = %d, want %d", w.Code, tt.want)
 			}
 		})
+	}
+}
+
+func TestForgotPasswordHandler(t *testing.T) {
+
+	svc := &fakeAccounts{}
+	w := send(t, svc, http.MethodPost, "/auth/forgot-password", `{"email":"reader@example.com"}`, nil)
+
+	if w.Code != http.StatusAccepted || svc.gotEmail != "reader@example.com" {
+		t.Errorf("status = %d, service got %q", w.Code, svc.gotEmail)
+	}
+}
+
+func TestResetPasswordHandler(t *testing.T) {
+
+	svc := &fakeAccounts{}
+	w := send(t, svc, http.MethodPost, "/auth/reset-password", `{"token":"from-link","password":"a new password"}`, nil)
+	if w.Code != http.StatusNoContent || svc.gotRefresh != "from-link" || svc.gotNewPass != "a new password" {
+		t.Errorf("status = %d, service got %q %q", w.Code, svc.gotRefresh, svc.gotNewPass)
+	}
+
+	w = send(t, &fakeAccounts{err: ErrInvalidEmailToken}, http.MethodPost, "/auth/reset-password", `{"token":"used","password":"a new password"}`, nil)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("used link: status = %d, want 400", w.Code)
 	}
 }
