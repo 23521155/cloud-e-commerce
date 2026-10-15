@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 
 	"github.com/jmoiron/sqlx"
 	mssql "github.com/microsoft/go-mssqldb"
@@ -15,8 +16,23 @@ const (
 	sqlUniqueIndex      = 2601
 )
 
-// userColumns are the columns read into a User.
-const userColumns = `id, email, password_hash, name, role, email_verified_at, created_at, updated_at`
+// columns are the columns read into a User.
+var columns = []string{
+	"id", "email", "password_hash", "name", "role", "email_verified_at", "created_at", "updated_at",
+	"phone", "address", "city", "postal_code", "country",
+}
+
+// userColumns is columns for a SELECT.
+var userColumns = strings.Join(columns, ", ")
+
+// outputColumns is columns for an OUTPUT clause, e.g. INSERTED.id.
+func outputColumns(table string) string {
+	prefixed := make([]string, len(columns))
+	for i, c := range columns {
+		prefixed[i] = table + "." + c
+	}
+	return strings.Join(prefixed, ", ")
+}
 
 type Repository struct {
 	db *sqlx.DB
@@ -33,8 +49,7 @@ func (r *Repository) Create(ctx context.Context, u User) (User, error) {
 	var created User
 	err := r.db.GetContext(ctx, &created, `
 INSERT INTO users (id, email, password_hash, name, role)
-OUTPUT INSERTED.id, INSERTED.email, INSERTED.password_hash, INSERTED.name, INSERTED.role,
-       INSERTED.email_verified_at, INSERTED.created_at, INSERTED.updated_at
+OUTPUT `+outputColumns("INSERTED")+`
 VALUES (@p1, @p2, @p3, @p4, @p5)`,
 		u.ID, u.Email, u.PasswordHash, u.Name, u.Role,
 	)
@@ -43,6 +58,21 @@ VALUES (@p1, @p2, @p3, @p4, @p5)`,
 	}
 
 	return created, err
+}
+
+// UpdateProfile sets the name and profile of the account with id and
+// returns the stored row, or ErrNotFound.
+func (r *Repository) UpdateProfile(ctx context.Context, id, name string, p Profile) (User, error) {
+	return r.findOne(ctx, `
+UPDATE users
+SET name = @name, phone = @phone, address = @address, city = @city,
+    postal_code = @postal_code, country = @country, updated_at = SYSUTCDATETIME()
+OUTPUT `+outputColumns("INSERTED")+`
+WHERE id = @id`,
+		sql.Named("id", id), sql.Named("name", name),
+		sql.Named("phone", p.Phone), sql.Named("address", p.Address), sql.Named("city", p.City),
+		sql.Named("postal_code", p.PostalCode), sql.Named("country", p.Country),
+	)
 }
 
 // FindByEmail returns the account with a normalized email, or ErrNotFound.

@@ -13,6 +13,14 @@ export type Profile = {
 
 export type SavedNotice = "profile" | "password";
 
+/** Why the ledger page was not saved; the details stay as they were. */
+export type ProfileError = "profile-invalid" | "profile-failed";
+
+const PROFILE_ERROR: Record<ProfileError, string> = {
+  "profile-invalid": "Not saved: one of the details is too long. Please shorten it and try again.",
+  "profile-failed": "Not saved: the shop could not be reached. Please try again in a moment.",
+};
+
 const COUNTRIES = ["Vietnam", "United States", "United Kingdom", "Australia", "Canada", "Japan", "Singapore", "Other country"];
 
 function Notice({ show, children }: { show: boolean; children: React.ReactNode }) {
@@ -35,7 +43,7 @@ function Entry({ label, name, className = "", ...input }: { label: string; name:
 }
 
 /** Account settings as an open ledger: details across two pages, the password on a loose slip below. */
-export function Account({ profile, saved }: { profile: Profile; saved?: SavedNotice }) {
+export function Account({ profile, saved, error }: { profile: Profile; saved?: SavedNotice; error?: ProfileError }) {
   return (
     <div className="ledger">
       <form action={updateProfile} className="ledger__form">
@@ -45,9 +53,10 @@ export function Account({ profile, saved }: { profile: Profile; saved?: SavedNot
             <h2 className="ledger__title">
               Particulars <em>of the reader</em>
             </h2>
-            <Entry label="Full name" name="name" autoComplete="name" required defaultValue={profile.name} />
-            <Entry label="Email" name="email" type="email" autoComplete="email" required defaultValue={profile.email} placeholder="you@example.com" />
-            <Entry label="Phone" name="phone" type="tel" autoComplete="tel" defaultValue={profile.phone} placeholder="only the courier sees it" />
+            <Entry label="Full name" name="name" autoComplete="name" required maxLength={100} defaultValue={profile.name} />
+            {/* Changing the email needs the new address confirmed, which the shop cannot do yet */}
+            <Entry label="Email" name="email" type="email" autoComplete="email" readOnly defaultValue={profile.email} />
+            <Entry label="Phone" name="phone" type="tel" autoComplete="tel" maxLength={20} defaultValue={profile.phone} placeholder="only the courier sees it" />
             <p className="ledger__margin">Kept by the shop, never shown to other readers.</p>
             {/* The password slip sits below the book, out of the first screen; point to it from the page */}
             <a href="#password-slip" className="ledger__to-slip under-hover">
@@ -58,10 +67,10 @@ export function Account({ profile, saved }: { profile: Profile; saved?: SavedNot
             <h2 className="ledger__title">
               Where parcels <em>are sent</em>
             </h2>
-            <Entry label="Street address" name="address" autoComplete="street-address" defaultValue={profile.address} />
+            <Entry label="Street address" name="address" autoComplete="street-address" maxLength={300} defaultValue={profile.address} />
             <div className="ledger__pair">
-              <Entry label="City" name="city" autoComplete="address-level2" defaultValue={profile.city} />
-              <Entry label="Post code" name="postal" autoComplete="postal-code" defaultValue={profile.postal} />
+              <Entry label="City" name="city" autoComplete="address-level2" maxLength={100} defaultValue={profile.city} />
+              <Entry label="Post code" name="postal" autoComplete="postal-code" maxLength={20} defaultValue={profile.postal} />
             </div>
             <label className="ledger__entry">
               <span className="ledger__caption">Country</span>
@@ -74,6 +83,11 @@ export function Account({ profile, saved }: { profile: Profile; saved?: SavedNot
             <div className="ledger__foot">
               <SubmitButton pending="Saving…">Save the page</SubmitButton>
               <Notice show={saved === "profile"}>Saved.</Notice>
+              {error && (
+                <p className="acc-notice m-0" role="alert">
+                  {PROFILE_ERROR[error]}
+                </p>
+              )}
             </div>
           </div>
         </div>

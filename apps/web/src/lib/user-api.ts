@@ -6,8 +6,11 @@ const BASE = `${GATEWAY_URL}/api/users`;
 
 export type NewAccount = { name: string; email: string; password: string };
 
+/** Contact and delivery details kept on the account; empty strings are details not given. */
+export type ProfileDetails = { phone: string; address: string; city: string; postalCode: string; country: string };
+
 /** The account as the user service stored it. */
-export type Account = { id: string; email: string; name: string; role: string; createdAt: string };
+export type Account = { id: string; email: string; name: string; role: string; createdAt: string } & ProfileDetails;
 
 export type RegisterResult =
   | { ok: true; account: Account }
@@ -96,6 +99,37 @@ export async function me(accessToken: string): Promise<MeResult> {
 
   if (res.ok) return { ok: true, account: (await res.json()) as Account };
   if (res.status === 401) return { ok: false, reason: "signed-out" };
+
+  return { ok: false, reason: "failed" };
+}
+
+export type UpdateProfileResult =
+  | { ok: true; account: Account }
+  | { ok: false; reason: "signed-out" }
+  /** A field was refused; the message names it. */
+  | { ok: false; reason: "invalid"; message: string }
+  | { ok: false; reason: "failed" };
+
+/** PUT /api/users/me: the name and the whole profile. The email cannot be changed here. */
+export async function updateProfile(accessToken: string, profile: { name: string } & ProfileDetails): Promise<UpdateProfileResult> {
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/me`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}`, ...(await forwardedFor()) },
+      body: JSON.stringify(profile),
+      cache: "no-store",
+    });
+  } catch {
+    return { ok: false, reason: "failed" };
+  }
+
+  if (res.ok) return { ok: true, account: (await res.json()) as Account };
+  if (res.status === 401) return { ok: false, reason: "signed-out" };
+  if (res.status === 400) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    return { ok: false, reason: "invalid", message: (body.error ?? "").replace(/^invalid input: /, "") };
+  }
 
   return { ok: false, reason: "failed" };
 }

@@ -42,6 +42,17 @@ func (f *fakeStore) FindByEmail(ctx context.Context, email string) (User, error)
 	return u, nil
 }
 
+func (f *fakeStore) UpdateProfile(ctx context.Context, id, name string, p Profile) (User, error) {
+	for email, u := range f.users {
+		if u.ID == id {
+			u.Name, u.Profile = name, p
+			f.users[email] = u
+			return u, nil
+		}
+	}
+	return User{}, ErrNotFound
+}
+
 func (f *fakeStore) FindByID(ctx context.Context, id string) (User, error) {
 	for _, u := range f.users {
 		if u.ID == id {
@@ -223,5 +234,55 @@ func TestMeFindsTheAccount(t *testing.T) {
 
 	if _, err := svc.Me(context.Background(), "no-such-id"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("unknown id error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestUpdateProfileTrimsAndStores(t *testing.T) {
+
+	svc, _, u := registered(t)
+
+	got, err := svc.UpdateProfile(context.Background(), u.ID, "  Trần Thị Bình ", Profile{
+		Phone: " 0901234567 ", Address: "12 Lê Lợi", City: "Huế", PostalCode: "", Country: "Vietnam",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Name != "Trần Thị Bình" || got.Phone != "0901234567" || got.City != "Huế" || got.PostalCode != "" {
+		t.Errorf("stored %+v", got)
+	}
+}
+
+func TestUpdateProfileValidates(t *testing.T) {
+
+	svc, _, u := registered(t)
+
+	tests := []struct {
+		name    string
+		user    string
+		profile Profile
+		field   string
+	}{
+		{"empty name", " ", Profile{}, "name"},
+		{"long phone", "R", Profile{Phone: strings.Repeat("9", maxPhoneLen+1)}, "phone"},
+		{"long address", "R", Profile{Address: strings.Repeat("a", maxAddressLen+1)}, "address"},
+		{"long postal code", "R", Profile{PostalCode: strings.Repeat("1", maxPostalLen+1)}, "postal code"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := svc.UpdateProfile(context.Background(), u.ID, tt.user, tt.profile)
+			if !errors.Is(err, ErrInvalidInput) || !strings.Contains(err.Error(), tt.field) {
+				t.Errorf("error = %v, want ErrInvalidInput naming %q", err, tt.field)
+			}
+		})
+	}
+}
+
+func TestUpdateProfileUnknownAccount(t *testing.T) {
+
+	svc, _, _ := registered(t)
+
+	if _, err := svc.UpdateProfile(context.Background(), "no-such-id", "R", Profile{}); !errors.Is(err, ErrNotFound) {
+		t.Errorf("error = %v, want ErrNotFound", err)
 	}
 }

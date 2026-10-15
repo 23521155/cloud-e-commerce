@@ -105,3 +105,30 @@ func TestFindByEmailAndID(t *testing.T) {
 		t.Errorf("missing id error = %v, want ErrNotFound", err)
 	}
 }
+
+func TestUpdateProfile(t *testing.T) {
+	repo := newTestRepo(t)
+	u := newUser(t, repo)
+	ctx := context.Background()
+
+	created, err := repo.Create(ctx, u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Profile != (Profile{}) {
+		t.Errorf("new account profile = %+v, want empty", created.Profile)
+	}
+
+	want := Profile{Phone: "0901234567", Address: "12 Lê Lợi", City: "Huế", PostalCode: "530000", Country: "Vietnam"}
+	got, err := repo.UpdateProfile(ctx, u.ID, "Trần Thị Bình", want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Name != "Trần Thị Bình" || got.Profile != want || got.UpdatedAt.Before(created.UpdatedAt) {
+		t.Errorf("updated = %+v", got)
+	}
+
+	if _, err := repo.UpdateProfile(ctx, "missing", "R", Profile{}); !errors.Is(err, ErrNotFound) {
+		t.Errorf("missing id error = %v, want ErrNotFound", err)
+	}
+}

@@ -26,6 +26,9 @@ type fakeAccounts struct {
 	gotEmail string
 	gotPass  string
 	gotID    string
+
+	gotName    string
+	gotProfile Profile
 }
 
 func (f *fakeAccounts) Register(ctx context.Context, in RegisterInput) (User, error) {
@@ -40,6 +43,11 @@ func (f *fakeAccounts) Login(ctx context.Context, email, password string) (User,
 
 func (f *fakeAccounts) Me(ctx context.Context, id string) (User, error) {
 	f.gotID = id
+	return f.user, f.err
+}
+
+func (f *fakeAccounts) UpdateProfile(ctx context.Context, id, name string, p Profile) (User, error) {
+	f.gotID, f.gotName, f.gotProfile = id, name, p
 	return f.user, f.err
 }
 
@@ -232,5 +240,35 @@ func TestMeWithoutIdentity(t *testing.T) {
 				t.Errorf("status = %d, want 401", w.Code)
 			}
 		})
+	}
+}
+
+func TestUpdateMe(t *testing.T) {
+
+	svc := &fakeAccounts{user: User{ID: "u1", Name: "New Name", Profile: Profile{City: "Hà Nội"}}}
+
+	w := send(t, svc, http.MethodPut, "/me",
+		`{"name":"New Name","phone":"0901","address":"1 Lê Lợi","city":"Hà Nội","postalCode":"100000","country":"Vietnam","email":"ignored@example.com"}`,
+		map[string]string{"X-User-ID": "u1"})
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body %s", w.Code, w.Body)
+	}
+	want := Profile{Phone: "0901", Address: "1 Lê Lợi", City: "Hà Nội", PostalCode: "100000", Country: "Vietnam"}
+	if svc.gotID != "u1" || svc.gotName != "New Name" || svc.gotProfile != want {
+		t.Errorf("service got %q %q %+v", svc.gotID, svc.gotName, svc.gotProfile)
+	}
+	if !strings.Contains(w.Body.String(), `"city":"Hà Nội"`) {
+		t.Errorf("body = %s, want the updated profile", w.Body)
+	}
+}
+
+func TestUpdateMeNeedsSignIn(t *testing.T) {
+
+	svc := &fakeAccounts{}
+	w := send(t, svc, http.MethodPut, "/me", `{"name":"X"}`, nil)
+
+	if w.Code != http.StatusUnauthorized || svc.gotName != "" {
+		t.Errorf("status = %d, service called = %v", w.Code, svc.gotName != "")
 	}
 }

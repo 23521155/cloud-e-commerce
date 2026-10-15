@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { Account, type Profile, type SavedNotice } from "@/components/account/Account";
+import { Account, type Profile, type ProfileError, type SavedNotice } from "@/components/account/Account";
 import { MotionController } from "@/components/motion/MotionController";
 import { getSession } from "@/lib/session";
 import { me } from "@/lib/user-api";
@@ -13,6 +13,7 @@ export const metadata: Metadata = {
 export default async function AccountPage({ searchParams }: PageProps<"/account">) {
   const sp = await searchParams;
   const saved: SavedNotice | undefined = sp.saved === "profile" || sp.saved === "password" ? sp.saved : undefined;
+  const error: ProfileError | undefined = sp.error === "profile-invalid" || sp.error === "profile-failed" ? sp.error : undefined;
 
   const session = await getSession();
   if (!session) redirect("/sign-in?next=/account");
@@ -21,15 +22,15 @@ export default async function AccountPage({ searchParams }: PageProps<"/account"
   if (!result.ok && result.reason === "signed-out") redirect("/sign-in?next=/account");
   if (!result.ok) throw new Error("Your account could not be loaded right now.");
 
-  // The delivery address is not kept by the user service yet.
+  const { account } = result;
   const profile: Profile = {
-    name: result.account.name,
-    email: result.account.email,
-    phone: "",
-    address: "",
-    city: "",
-    postal: "",
-    country: "Vietnam",
+    name: account.name,
+    email: account.email,
+    phone: account.phone,
+    address: account.address,
+    city: account.city,
+    postal: account.postalCode,
+    country: account.country || "Vietnam",
   };
 
   return (
@@ -51,7 +52,7 @@ export default async function AccountPage({ searchParams }: PageProps<"/account"
           </p>
         </div>
 
-        <Account profile={profile} saved={saved} />
+        <Account profile={profile} saved={saved} error={error} />
       </section>
     </>
   );

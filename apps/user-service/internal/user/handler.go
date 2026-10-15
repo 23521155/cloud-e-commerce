@@ -25,6 +25,7 @@ type accounts interface {
 	Register(ctx context.Context, in RegisterInput) (User, error)
 	Login(ctx context.Context, email, password string) (User, token.Access, error)
 	Me(ctx context.Context, id string) (User, error)
+	UpdateProfile(ctx context.Context, id, name string, p Profile) (User, error)
 }
 
 type Handler struct {
@@ -42,6 +43,7 @@ func (h *Handler) Register(api *gin.RouterGroup) {
 	api.POST("/auth/register", h.register)
 	api.POST("/auth/login", h.login)
 	api.GET("/me", h.me)
+	api.PUT("/me", h.updateMe)
 }
 
 // registerRequest is the body of POST /auth/register. Fields are checked by
@@ -125,6 +127,52 @@ func (h *Handler) me(c *gin.Context) {
 	u, err := h.service.Me(c.Request.Context(), id)
 	if errors.Is(err, ErrNotFound) {
 		// A valid token for an account that no longer exists.
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "sign in required"})
+		return
+	}
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, u)
+}
+
+// updateMeRequest is the body of PUT /me: the whole editable profile. The
+// email is not part of it: changing it needs the new address confirmed.
+type updateMeRequest struct {
+	Name       string `json:"name"`
+	Phone      string `json:"phone"`
+	Address    string `json:"address"`
+	City       string `json:"city"`
+	PostalCode string `json:"postalCode"`
+	Country    string `json:"country"`
+}
+
+func (h *Handler) updateMe(c *gin.Context) {
+
+	id := c.GetHeader(userIDHeader)
+	if id == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "sign in required"})
+		return
+	}
+
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBodyBytes)
+
+	var req updateMeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	u, err := h.service.UpdateProfile(c.Request.Context(), id, req.Name, Profile{
+		Phone:      req.Phone,
+		Address:    req.Address,
+		City:       req.City,
+		PostalCode: req.PostalCode,
+		Country:    req.Country,
+	})
+	if errors.Is(err, ErrNotFound) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "sign in required"})
 		return
 	}

@@ -20,4 +20,16 @@ type User struct {
 	EmailVerifiedAt *time.Time `db:"email_verified_at" json:"-"`
 	CreatedAt       time.Time  `db:"created_at" json:"createdAt"`
 	UpdatedAt       time.Time  `db:"updated_at" json:"-"`
+
+	Profile
+}
+
+// Profile is the contact and delivery details kept on the account, used to
+// fill in checkout. Empty strings are details not given.
+type Profile struct {
+	Phone      string `db:"phone" json:"phone"`
+	Address    string `db:"address" json:"address"`
+	City       string `db:"city" json:"city"`
+	PostalCode string `db:"postal_code" json:"postalCode"`
+	Country    string `db:"country" json:"country"`
 }

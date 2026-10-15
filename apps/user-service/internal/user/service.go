@@ -29,10 +29,17 @@ var (
 	ErrNotFound = errors.New("user not found")
 )
 
-// Field limits, matched by the columns in migrations/000001_create_users.
+// Field limits, matched by the columns in migrations. The profile limits are
+// also the order service's, so a saved profile is accepted at checkout.
 const (
 	maxNameLen  = 100
 	maxEmailLen = 254
+
+	maxPhoneLen   = 20
+	maxAddressLen = 300
+	maxCityLen    = 100
+	maxPostalLen  = 20
+	maxCountryLen = 60
 
 	minPasswordLen = 8
 	// Long enough for any passphrase, short enough that hashing a huge
@@ -46,6 +53,7 @@ type store interface {
 	Create(ctx context.Context, u User) (User, error)
 	FindByEmail(ctx context.Context, email string) (User, error)
 	FindByID(ctx context.Context, id string) (User, error)
+	UpdateProfile(ctx context.Context, id, name string, p Profile) (User, error)
 }
 
 // issuer signs access tokens; *token.Issuer outside tests.
@@ -140,6 +148,36 @@ func (s *Service) Login(ctx context.Context, email, password string) (User, toke
 // Me returns the account an access token was issued for.
 func (s *Service) Me(ctx context.Context, id string) (User, error) {
 	return s.store.FindByID(ctx, id)
+}
+
+// UpdateProfile sets the name and the contact and delivery details of the
+// account with id. Every detail but the name may be left empty.
+func (s *Service) UpdateProfile(ctx context.Context, id, name string, p Profile) (User, error) {
+
+	name = strings.TrimSpace(name)
+	if err := validateName(name); err != nil {
+		return User{}, err
+	}
+
+	fields := []struct {
+		label string
+		value *string
+		max   int
+	}{
+		{"phone", &p.Phone, maxPhoneLen},
+		{"address", &p.Address, maxAddressLen},
+		{"city", &p.City, maxCityLen},
+		{"postal code", &p.PostalCode, maxPostalLen},
+		{"country", &p.Country, maxCountryLen},
+	}
+	for _, f := range fields {
+		*f.value = strings.TrimSpace(*f.value)
+		if utf8.RuneCountInString(*f.value) > f.max {
+			return User{}, fmt.Errorf("%w: %s must be at most %d characters", ErrInvalidInput, f.label, f.max)
+		}
+	}
+
+	return s.store.UpdateProfile(ctx, id, name, p)
 }
 
 // dummyHash is a hash of a random password with the current cost, for

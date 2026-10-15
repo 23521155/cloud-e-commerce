@@ -10,7 +10,15 @@ const price = new Intl.NumberFormat("en-US", { style: "currency", currency: "VND
 
 const COUNTRIES = ["Vietnam", "United States", "United Kingdom", "Australia", "Canada", "Japan", "Singapore", "Other country"];
 
-type CheckoutProps = { lines: BasketLine[]; total: number; action: (state: CheckoutState, formData: FormData) => Promise<CheckoutState> };
+/** A signed-in reader's saved details, filled in for them; each can still be changed for this order. */
+export type CheckoutPrefill = { email: string; phone: string; name: string; address: string; city: string; postal: string; country: string };
+
+type CheckoutProps = {
+  lines: BasketLine[];
+  total: number;
+  action: (state: CheckoutState, formData: FormData) => Promise<CheckoutState>;
+  prefill?: CheckoutPrefill;
+};
 
 function Field({ label, name, hint, className = "", ...input }: { label: string; name: string; hint?: string; className?: string } & React.InputHTMLAttributes<HTMLInputElement>) {
   return (
@@ -36,25 +44,25 @@ function Card({ title, note, children }: { title: string; note?: string; childre
   );
 }
 
-function ContactCard() {
+function ContactCard({ prefill }: { prefill?: CheckoutPrefill }) {
   return (
     <Card title="Contact" note="For your receipt">
-      <Field label="Email" name="email" type="email" autoComplete="email" required className="co__full" placeholder="you@example.com" />
-      <Field label="Phone" name="phone" type="tel" autoComplete="tel" required className="co__full" hint="Only used by the courier." />
+      <Field label="Email" name="email" type="email" autoComplete="email" required className="co__full" placeholder="you@example.com" defaultValue={prefill?.email} />
+      <Field label="Phone" name="phone" type="tel" autoComplete="tel" required className="co__full" hint="Only used by the courier." defaultValue={prefill?.phone} />
     </Card>
   );
 }
 
-function DeliveryCard() {
+function DeliveryCard({ prefill }: { prefill?: CheckoutPrefill }) {
   return (
     <Card title="Delivery" note="Shipping cost confirmed later">
-      <Field label="Full name" name="name" autoComplete="name" required className="co__full" />
-      <Field label="Address" name="address" autoComplete="street-address" required className="co__full" />
-      <Field label="City" name="city" autoComplete="address-level2" required />
-      <Field label="Postal code" name="postal" autoComplete="postal-code" />
+      <Field label="Full name" name="name" autoComplete="name" required className="co__full" defaultValue={prefill?.name} />
+      <Field label="Address" name="address" autoComplete="street-address" required className="co__full" defaultValue={prefill?.address} />
+      <Field label="City" name="city" autoComplete="address-level2" required defaultValue={prefill?.city} />
+      <Field label="Postal code" name="postal" autoComplete="postal-code" defaultValue={prefill?.postal} />
       <label className="co__field co__full">
         <span className="co__label small-upper">Country</span>
-        <select name="country" className="co__input co__select" autoComplete="country-name" defaultValue="Vietnam" required>
+        <select name="country" className="co__input co__select" autoComplete="country-name" defaultValue={prefill?.country || "Vietnam"} required>
           {COUNTRIES.map((c) => (
             <option key={c}>{c}</option>
           ))}
@@ -208,7 +216,7 @@ function OrderCard({ lines, total }: { lines: BasketLine[]; total: number }) {
 const Terms = () => <p className="co__terms m-0">Shipping is not included in this total yet.</p>;
 
 /** One step at a time: contact, delivery, then payment with the order card. */
-export function Checkout({ lines, total, action }: CheckoutProps) {
+export function Checkout({ lines, total, action, prefill }: CheckoutProps) {
   return (
     <CheckoutForm action={action} titles={Object.fromEntries(lines.map((l) => [l.book.slug, l.book.title]))} className="co co--steps">
       {/* The basket is in the browser, so its copies travel with the form */}
@@ -217,8 +225,8 @@ export function Checkout({ lines, total, action }: CheckoutProps) {
       ))}
       <Stepper
         steps={[
-          { key: "contact", label: "Contact", content: <ContactCard /> },
-          { key: "delivery", label: "Delivery", content: <DeliveryCard /> },
+          { key: "contact", label: "Contact", content: <ContactCard prefill={prefill} /> },
+          { key: "delivery", label: "Delivery", content: <DeliveryCard prefill={prefill} /> },
           {
             key: "review",
             label: "Payment & review",
