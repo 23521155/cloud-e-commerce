@@ -237,7 +237,7 @@ The unit tests replace the database, clock, token issuer and encryption with fak
 ## On Azure
 
 - **user-service:** a Container App with internal ingress on port 8085 (`infra/modules/containerapps.bicep`), and the `users` database on the shared Azure SQL server.
-- **sendEmail:** a Function App on the same Container Apps environment (`kind: functionapp`), scaled by Container Apps on the `email-outbox` queue.
+- **sendEmail:** a Function App on the Flex Consumption plan (`infra/modules/functions.bicep`, Node 22), billed per execution and scaled on the `email-outbox` queue down to zero. The deploy pipeline ships its code as a zip package (`az functionapp deployment source config-zip`). Flex Consumption is available in `japaneast` and `koreacentral`, not in `indiasouthcentral`.
 - **Supporting resources:** the queues are in the storage account from `infra/modules/storage.bicep`, and email goes through Azure Communication Services (`infra/modules/communication.bicep`, Azure-managed domain).
 - **Secrets:** `JWT_SECRET` and `MFA_ENCRYPTION_KEY` come from the repository's GitHub secrets.
 

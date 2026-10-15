@@ -138,6 +138,18 @@ module containerApps 'modules/containerapps.bicep' = if(deployApps) {
     imageTag: imageTag
     redisName: redis.outputs.name
     storageAccountName: storage.outputs.name
+  }
+}
+
+// The sendEmail Function on the Flex Consumption plan. Created with the base infrastructure so the
+// pipeline can deploy its code; it needs no container image.
+module functions 'modules/functions.bicep' = {
+  name: 'functions'
+  params: {
+    location: location
+    prefix: prefix
+    suffix: suffix
+    storageAccountName: storage.outputs.name
     communicationServiceName: communication.outputs.communicationServiceName
     emailSender: communication.outputs.senderAddress
     appInsightsConnectionString: monitoring.outputs.appInsightsConnectionString
@@ -149,3 +161,4 @@ output registryLoginServer string = registry.outputs.loginServer
 output sqlServerFqdn string = sql.outputs.serverFqdn
 output webUrl string = containerApps.?outputs.webUrl ?? ''
 output gatewayUrl string = containerApps.?outputs.gatewayUrl ?? ''
+output functionAppName string = functions.outputs.name

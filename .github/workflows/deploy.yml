@@ -37,7 +37,7 @@ permissions:
 
 env:
   PREFIX: marginalleya
-  SERVICES: 'api-gateway catalog-service order-service user-service functions web'
+  SERVICES: 'api-gateway catalog-service order-service user-service web'
 
 jobs:
   plan:
@@ -217,6 +217,36 @@ jobs:
             az containerapp update -g "${{ matrix.rg }}" -n "$s" \
               --image "${{ steps.acr.outputs.name }}.azurecr.io/$s:$TAG" -o none
           done
+
+      # The sendEmail Function runs on the Flex Consumption plan, which takes a zip package rather
+      # than an image: the compiled code, host.json and the production node_modules.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/functions/package-lock.json
+
+      - name: Package the Function
+        working-directory: apps/functions
+        run: |
+          npm ci
+          npm run build
+          npm prune --omit=dev
+          zip -qr "$RUNNER_TEMP/functions.zip" host.json package.json dist node_modules
+
+      # Bicep and the image pushes can outlast the OIDC assertion; sign in again first.
+      - name: Re-login to Azure before the Function deploy
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy the Function
+        run: |
+          app=$(az functionapp list -g "${{ matrix.rg }}" --query "[0].name" -o tsv)
+          az functionapp deployment source config-zip -g "${{ matrix.rg }}" -n "$app" --src "$RUNNER_TEMP/functions.zip" -o none
+          echo "function: $app" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Smoke test
         shell: bash
