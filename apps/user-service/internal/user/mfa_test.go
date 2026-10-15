@@ -269,3 +269,26 @@ func TestDisableTOTP(t *testing.T) {
 		t.Errorf("sign-in after turning off: %v, want no code step", err)
 	}
 }
+
+func TestTheTokenSaysHowTheSessionSignedIn(t *testing.T) {
+
+	svc, _, _, secret := withMFA(t)
+	issuer := svc.tokens.(*fakeIssuer)
+
+	tokens, err := signInWithCode(svc, secret, svc.now().Add(totpPeriod), t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(issuer.gotAMR, " ") != AMRPasswordAndCode {
+		t.Errorf("amr after the code = %v", issuer.gotAMR)
+	}
+
+	// A refresh keeps it.
+	issuer.gotAMR = nil
+	if _, _, err := svc.Refresh(context.Background(), tokens.Refresh, ""); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(issuer.gotAMR, " ") != AMRPasswordAndCode {
+		t.Errorf("amr after a refresh = %v", issuer.gotAMR)
+	}
+}

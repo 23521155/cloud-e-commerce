@@ -281,3 +281,34 @@ WHERE user_id = @id AND revoked_at IS NULL`, sql.Named("id", userID)); err != ni
 
 	return tx.Commit()
 }
+
+// SetRole gives the account with email a role and ends its sessions, so the
+// next sign-in carries the new role. ErrNotFound when there is no account.
+func (r *Repository) SetRole(ctx context.Context, email, role string) (User, error) {
+
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return User{}, err
+	}
+	defer tx.Rollback()
+
+	var u User
+	err = tx.GetContext(ctx, &u, `
+UPDATE users SET role = @role, updated_at = SYSUTCDATETIME()
+OUTPUT `+outputColumns("INSERTED")+`
+WHERE email = @email`, sql.Named("email", email), sql.Named("role", role))
+	if errors.Is(err, sql.ErrNoRows) {
+		return User{}, ErrNotFound
+	}
+	if err != nil {
+		return User{}, err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+UPDATE refresh_tokens SET revoked_at = SYSUTCDATETIME()
+WHERE user_id = @id AND revoked_at IS NULL`, sql.Named("id", u.ID)); err != nil {
+		return User{}, err
+	}
+
+	return u, tx.Commit()
+}

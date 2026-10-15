@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/fizzisme/user-service/internal/token"
@@ -22,6 +23,15 @@ var ErrInvalidRefreshToken = errors.New("invalid refresh token")
 // copied.
 const reuseGrace = 30 * time.Second
 
+// How a session was signed in, as the access token's amr claim says.
+const (
+	// AMRPassword is a password alone.
+	AMRPassword = "pwd"
+	// AMRPasswordAndCode is a password and then an authenticator or
+	// recovery code.
+	AMRPasswordAndCode = "pwd otp"
+)
+
 // RefreshToken is one refresh_tokens row. Only the hash of the token is
 // stored.
 type RefreshToken struct {
@@ -34,6 +44,9 @@ type RefreshToken struct {
 	ExpiresAt  time.Time  `db:"expires_at"`
 	UsedAt     *time.Time `db:"used_at"`
 	RevokedAt  *time.Time `db:"revoked_at"`
+
+	// AMR is how the session was signed in (AMRPassword, AMRPasswordAndCode).
+	AMR string `db:"amr"`
 }
 
 // Tokens are what signing in or refreshing gives the client.
@@ -71,9 +84,9 @@ func hashToken(raw string) []byte {
 }
 
 // issue signs an access token for u and adds a refresh token to family.
-func (s *Service) issue(ctx context.Context, u User, familyID, device string) (Tokens, error) {
+func (s *Service) issue(ctx context.Context, u User, familyID, device, amr string) (Tokens, error) {
 
-	access, err := s.tokens.Issue(token.Subject{ID: u.ID, Email: u.Email, Name: u.Name, Roles: []string{u.Role}})
+	access, err := s.tokens.Issue(token.Subject{ID: u.ID, Email: u.Email, Name: u.Name, Roles: []string{u.Role}, AMR: strings.Fields(amr)})
 	if err != nil {
 		return Tokens{}, err
 	}
@@ -90,6 +103,7 @@ func (s *Service) issue(ctx context.Context, u User, familyID, device string) (T
 		TokenHash:  hash,
 		DeviceName: truncate(device, 200),
 		ExpiresAt:  expires,
+		AMR:        amr,
 	}); err != nil {
 		return Tokens{}, err
 	}
@@ -97,9 +111,10 @@ func (s *Service) issue(ctx context.Context, u User, familyID, device string) (T
 	return Tokens{Access: access, Refresh: raw, RefreshExpiresAt: expires}, nil
 }
 
-// startSession begins a new family: one signed-in device.
-func (s *Service) startSession(ctx context.Context, u User, device string) (Tokens, error) {
-	return s.issue(ctx, u, uuid.NewString(), device)
+// startSession begins a new family: one signed-in device, signed in as amr
+// says.
+func (s *Service) startSession(ctx context.Context, u User, device, amr string) (Tokens, error) {
+	return s.issue(ctx, u, uuid.NewString(), device, amr)
 }
 
 // Refresh exchanges a refresh token for new tokens in the same session. The
@@ -151,7 +166,8 @@ func (s *Service) Refresh(ctx context.Context, raw, device string) (User, Tokens
 		return User{}, Tokens{}, err
 	}
 
-	tokens, err := s.issue(ctx, u, t.FamilyID, device)
+	// The session keeps how it was signed in.
+	tokens, err := s.issue(ctx, u, t.FamilyID, device, t.AMR)
 	if err != nil {
 		return User{}, Tokens{}, err
 	}

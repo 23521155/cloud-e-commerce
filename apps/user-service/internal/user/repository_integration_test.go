@@ -437,3 +437,28 @@ func TestRecoveryCodesAndDisable(t *testing.T) {
 		t.Errorf("%d recovery codes left after disabling", left)
 	}
 }
+
+func TestSetRole(t *testing.T) {
+	repo := newTestRepo(t)
+	u := newUser(t, repo)
+	ctx := context.Background()
+
+	if _, err := repo.Create(ctx, u, testVerification(u)); err != nil {
+		t.Fatal(err)
+	}
+	_, session, _ := newSecret()
+	if err := repo.CreateRefreshToken(ctx, RefreshToken{UserID: u.ID, FamilyID: uuid.NewString(), TokenHash: session, ExpiresAt: time.Now().Add(time.Hour), AMR: AMRPassword}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := repo.SetRole(ctx, u.Email, RoleStaff)
+	if err != nil || got.Role != RoleStaff {
+		t.Fatalf("SetRole = %+v, %v", got, err)
+	}
+	if rt, _ := repo.FindRefreshToken(ctx, session); rt.RevokedAt == nil || rt.AMR != AMRPassword {
+		t.Errorf("session after the role change: %+v", rt)
+	}
+	if _, err := repo.SetRole(ctx, "missing-"+u.Email, RoleStaff); !errors.Is(err, ErrNotFound) {
+		t.Errorf("unknown email: %v, want ErrNotFound", err)
+	}
+}

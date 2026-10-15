@@ -17,11 +17,13 @@ export type Session = {
   email: string;
   name: string;
   roles: string[];
+  /** How the session signed in: "pwd", and "otp" after a second factor. */
+  amr: string[];
   /** Seconds since the epoch, as in the token. */
   expiresAt: number;
 };
 
-type Claims = { sub?: string; email?: string; name?: string; roles?: string[]; exp?: number };
+type Claims = { sub?: string; email?: string; name?: string; roles?: string[]; amr?: string[]; exp?: number };
 
 /**
  * The session in an access token, or null when there is none or it has expired. The signature is
@@ -47,6 +49,7 @@ export function readAccessToken(token: string | undefined): Session | null {
     email: claims.email ?? "",
     name: claims.name ?? "",
     roles: claims.roles ?? [],
+    amr: claims.amr ?? [],
     expiresAt: claims.exp,
   };
 }
@@ -122,3 +125,6 @@ export async function codeStepToken(): Promise<string | undefined> {
 export async function endCodeStep() {
   (await cookies()).delete(MFA_COOKIE);
 }
+
+/** Staff signed in with two-step sign-in: the only sessions the shop office lets in. */
+export const isStaffWithCode = (s: Session | null) => !!s && s.roles.includes("staff") && s.amr.includes("otp");

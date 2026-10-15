@@ -34,7 +34,7 @@ func TestIssueIsAcceptedByTheGatewayRules(t *testing.T) {
 	}
 
 	before := time.Now()
-	access, err := iss.Issue(Subject{ID: "0199f2b0-0000-7000-8000-000000000001", Email: "reader@example.com", Name: "Reader", Roles: []string{"customer"}})
+	access, err := iss.Issue(Subject{ID: "0199f2b0-0000-7000-8000-000000000001", Email: "reader@example.com", Name: "Reader", Roles: []string{"customer"}, AMR: []string{"pwd", "otp"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func TestIssueIsAcceptedByTheGatewayRules(t *testing.T) {
 		t.Fatalf("gateway rules refuse the token: %v", err)
 	}
 
-	if claims.Subject != "0199f2b0-0000-7000-8000-000000000001" || claims.Email != "reader@example.com" || claims.Name != "Reader" || !slices.Equal(claims.Roles, []string{"customer"}) {
+	if claims.Subject != "0199f2b0-0000-7000-8000-000000000001" || claims.Email != "reader@example.com" || claims.Name != "Reader" || !slices.Equal(claims.Roles, []string{"customer"}) || !slices.Equal(claims.AMR, []string{"pwd", "otp"}) {
 		t.Errorf("claims = %+v", claims)
 	}
 

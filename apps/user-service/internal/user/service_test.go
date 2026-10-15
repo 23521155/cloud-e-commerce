@@ -303,10 +303,11 @@ type fakeIssuer struct {
 	gotEmail string
 	gotRoles []string
 	gotName  string
+	gotAMR   []string
 }
 
 func (f *fakeIssuer) Issue(sub token.Subject) (token.Access, error) {
-	f.gotID, f.gotEmail, f.gotRoles, f.gotName = sub.ID, sub.Email, sub.Roles, sub.Name
+	f.gotID, f.gotEmail, f.gotRoles, f.gotName, f.gotAMR = sub.ID, sub.Email, sub.Roles, sub.Name, sub.AMR
 	return token.Access{Token: "token-for-" + sub.ID}, nil
 }
 

@@ -139,3 +139,34 @@ export async function resetPassword(formData: FormData) {
       redirect(back("failed"));
   }
 }
+
+/**
+ * The shop office's sign-in. Staff must use two-step sign-in, so a staff account without it is told
+ * to turn it on first; a customer account is not signed in here at all.
+ */
+export async function staffSignIn(formData: FormData) {
+  const result = await login(text(formData, "email"), String(formData.get("password") ?? ""));
+
+  if (result.ok) {
+    if (result.account.role !== "staff") {
+      // Not a staff account: end the session the service just started.
+      await logout(result.tokens.refreshToken);
+      redirect("/admin/login?error=not-staff");
+    }
+    // Right password, but no second factor: sign them in to the shop so they can turn it on.
+    await startSession(result.tokens);
+    redirect("/admin/login?error=needs-two-step");
+  }
+
+  switch (result.reason) {
+    case "mfa":
+      await startCodeStep(result.mfaToken, result.mfaExpiresAt);
+      redirect(`/sign-in/code?${new URLSearchParams({ next: "/admin/overview" })}`);
+    case "wrong":
+      redirect("/admin/login?error=wrong");
+    case "busy":
+      redirect("/admin/login?error=busy");
+    default:
+      redirect("/admin/login?error=failed");
+  }
+}

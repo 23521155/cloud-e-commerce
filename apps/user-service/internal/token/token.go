@@ -16,6 +16,11 @@ type Claims struct {
 	Name  string   `json:"name"`
 	Roles []string `json:"roles"`
 
+	// AMR says how the session was signed in (OpenID Connect's
+	// authentication methods): "pwd", plus "otp" after a second factor.
+	// The shop office asks staff for both.
+	AMR []string `json:"amr"`
+
 	jwt.RegisteredClaims
 }
 
@@ -53,6 +58,7 @@ type Subject struct {
 	Email string
 	Name  string
 	Roles []string
+	AMR   []string
 }
 
 // Issue signs an HS256 access token for one user. The gateway checks the
@@ -66,6 +72,7 @@ func (i *Issuer) Issue(sub Subject) (Access, error) {
 		Email: sub.Email,
 		Name:  sub.Name,
 		Roles: sub.Roles,
+		AMR:   sub.AMR,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    i.issuer,
 			Subject:   sub.ID,

@@ -8,18 +8,19 @@ import (
 
 // refreshTokenColumns are the columns read into a RefreshToken.
 const refreshTokenColumns = `
-id, user_id, family_id, token_hash, device_name, created_at, expires_at, used_at, revoked_at`
+id, user_id, family_id, token_hash, device_name, created_at, expires_at, used_at, revoked_at, amr`
 
 // CreateRefreshToken stores a new refresh token.
 func (r *Repository) CreateRefreshToken(ctx context.Context, t RefreshToken) error {
 	_, err := r.db.ExecContext(ctx, `
-INSERT INTO refresh_tokens (user_id, family_id, token_hash, device_name, expires_at)
-VALUES (@user_id, @family_id, @token_hash, @device_name, @expires_at)`,
+INSERT INTO refresh_tokens (user_id, family_id, token_hash, device_name, expires_at, amr)
+VALUES (@user_id, @family_id, @token_hash, @device_name, @expires_at, @amr)`,
 		sql.Named("user_id", t.UserID),
 		sql.Named("family_id", t.FamilyID),
 		sql.Named("token_hash", t.TokenHash),
 		sql.Named("device_name", t.DeviceName),
 		sql.Named("expires_at", t.ExpiresAt.UTC()),
+		sql.Named("amr", t.AMR),
 	)
 	return err
 }

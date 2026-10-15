@@ -327,7 +327,7 @@ func (s *Service) VerifyMFA(ctx context.Context, token, code string) (User, Toke
 		return User{}, Tokens{}, err
 	}
 
-	tokens, err := s.startSession(ctx, u, c.DeviceName)
+	tokens, err := s.startSession(ctx, u, c.DeviceName, AMRPasswordAndCode)
 	if err != nil {
 		return User{}, Tokens{}, err
 	}

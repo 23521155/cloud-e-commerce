@@ -189,7 +189,7 @@ func (s *Service) Login(ctx context.Context, email, password, device string) (Us
 		return User{}, Tokens{}, s.challenge(ctx, u, device)
 	}
 
-	tokens, err := s.startSession(ctx, u, device)
+	tokens, err := s.startSession(ctx, u, device, AMRPassword)
 	if err != nil {
 		return User{}, Tokens{}, err
 	}
@@ -266,7 +266,7 @@ func (s *Service) ChangePassword(ctx context.Context, id, current, password, dev
 		return User{}, Tokens{}, err
 	}
 
-	tokens, err := s.startSession(ctx, u, device)
+	tokens, err := s.startSession(ctx, u, device, AMRPassword)
 	if err != nil {
 		return User{}, Tokens{}, err
 	}

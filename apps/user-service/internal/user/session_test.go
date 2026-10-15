@@ -44,7 +44,7 @@ func TestLoginStoresOnlyTheHashOfTheRefreshToken(t *testing.T) {
 	if string(stored.TokenHash) == tokens.Refresh || string(stored.TokenHash) != string(hashToken(tokens.Refresh)) {
 		t.Error("the stored value is not the hash of the token")
 	}
-	if stored.UserID != u.ID || stored.DeviceName != "Firefox on Windows" || stored.FamilyID == "" {
+	if stored.UserID != u.ID || stored.DeviceName != "Firefox on Windows" || stored.FamilyID == "" || stored.AMR != AMRPassword {
 		t.Errorf("stored %+v", stored)
 	}
 	if d := time.Until(tokens.RefreshExpiresAt); d < testRefreshTTL-time.Minute || d > testRefreshTTL {
