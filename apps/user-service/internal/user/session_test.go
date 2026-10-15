@@ -167,3 +167,56 @@ func TestLogoutEndsOnlyThatSession(t *testing.T) {
 		t.Errorf("logout with an unknown token: %v", err)
 	}
 }
+
+func TestChangePasswordEndsEverySessionButStartsANewOne(t *testing.T) {
+
+	svc, _, u, laptop := signedIn(t)
+	ctx := context.Background()
+
+	_, phone, err := svc.Login(ctx, "reader@example.com", "right password", "Safari on iOS")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, fresh, err := svc.ChangePassword(ctx, u.ID, "right password", "a new password", "Firefox on Windows")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for name, old := range map[string]Tokens{"laptop": laptop, "phone": phone} {
+		if _, _, err := svc.Refresh(ctx, old.Refresh, ""); !errors.Is(err, ErrInvalidRefreshToken) {
+			t.Errorf("%s session still refreshes: %v", name, err)
+		}
+	}
+	if _, _, err := svc.Refresh(ctx, fresh.Refresh, ""); err != nil {
+		t.Errorf("the new session is refused: %v", err)
+	}
+
+	if _, _, err := svc.Login(ctx, "reader@example.com", "right password", ""); !errors.Is(err, ErrInvalidCredentials) {
+		t.Errorf("old password still signs in: %v", err)
+	}
+	if _, _, err := svc.Login(ctx, "reader@example.com", "a new password", ""); err != nil {
+		t.Errorf("new password refused: %v", err)
+	}
+}
+
+func TestChangePasswordRefusals(t *testing.T) {
+
+	svc, store, u, laptop := signedIn(t)
+	ctx := context.Background()
+
+	if _, _, err := svc.ChangePassword(ctx, u.ID, "wrong password", "a new password", ""); !errors.Is(err, ErrWrongPassword) {
+		t.Errorf("wrong current password error = %v, want ErrWrongPassword", err)
+	}
+	if _, _, err := svc.ChangePassword(ctx, u.ID, "right password", "short", ""); !errors.Is(err, ErrInvalidInput) {
+		t.Errorf("short new password error = %v, want ErrInvalidInput", err)
+	}
+
+	// Nothing changed: the old session and password still work.
+	if _, _, err := svc.Refresh(ctx, laptop.Refresh, ""); err != nil {
+		t.Errorf("session ended by a refused change: %v", err)
+	}
+	if len(store.refresh) != 2 {
+		t.Errorf("%d refresh tokens, want 2 (sign-in and refresh)", len(store.refresh))
+	}
+}

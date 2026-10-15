@@ -1,10 +1,10 @@
 "use server";
 
-// Password change is still mock: it only redirects back with a notice. Form data stays in the POST
-// body; nothing is stored or logged.
+// Form data stays in the POST body; passwords are never stored, logged or put in a URL. Outcomes
+// come back to /account as a code in the query string.
 import { redirect } from "next/navigation";
-import { getSession, renewSession } from "@/lib/session";
-import { updateProfile as saveProfile } from "@/lib/user-api";
+import { getSession, renewSession, startSession } from "@/lib/session";
+import { changePassword as savePassword, updateProfile as saveProfile } from "@/lib/user-api";
 
 const text = (formData: FormData, name: string) => String(formData.get(name) ?? "").trim();
 
@@ -31,6 +31,29 @@ export async function updateProfile(formData: FormData) {
   redirect(`/account?error=${result.reason === "invalid" ? "profile-invalid" : "profile-failed"}`);
 }
 
-export async function changePassword() {
-  redirect("/account?saved=password");
+/** Sets a new password. Every other device is signed out; this one gets a new session. */
+export async function changePassword(formData: FormData) {
+  const session = await getSession();
+  if (!session) redirect("/sign-in?next=/account");
+
+  const password = String(formData.get("password") ?? "");
+  // The browser checks this too; a form posted before the page hydrated has not.
+  if (password !== String(formData.get("confirm") ?? "")) redirect("/account?error=password-mismatch#password-slip");
+
+  const result = await savePassword(session.token, String(formData.get("current") ?? ""), password);
+  if (result.ok) {
+    await startSession(result.tokens);
+    redirect("/account?saved=password#password-slip");
+  }
+
+  switch (result.reason) {
+    case "signed-out":
+      redirect("/sign-in?next=/account");
+    case "wrong-current":
+      redirect("/account?error=password-wrong#password-slip");
+    case "invalid":
+      redirect("/account?error=password-invalid#password-slip");
+    default:
+      redirect("/account?error=password-failed#password-slip");
+  }
 }

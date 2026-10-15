@@ -59,3 +59,11 @@ UPDATE refresh_tokens SET revoked_at = SYSUTCDATETIME()
 WHERE family_id = @family_id AND revoked_at IS NULL`, sql.Named("family_id", familyID))
 	return err
 }
+
+// RevokeAllSessions revokes every refresh token of one account.
+func (r *Repository) RevokeAllSessions(ctx context.Context, userID string) error {
+	_, err := r.db.ExecContext(ctx, `
+UPDATE refresh_tokens SET revoked_at = SYSUTCDATETIME()
+WHERE user_id = @user_id AND revoked_at IS NULL`, sql.Named("user_id", userID))
+	return err
+}

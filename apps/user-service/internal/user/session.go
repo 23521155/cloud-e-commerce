@@ -52,6 +52,7 @@ type sessionStore interface {
 	// MarkRefreshTokenUsed reports false when the token was already used.
 	MarkRefreshTokenUsed(ctx context.Context, id int64) (bool, error)
 	RevokeFamily(ctx context.Context, familyID string) error
+	RevokeAllSessions(ctx context.Context, userID string) error
 }
 
 // newRefreshToken returns a random token and its hash.

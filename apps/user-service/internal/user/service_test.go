@@ -48,6 +48,27 @@ func (f *fakeStore) MarkRefreshTokenUsed(ctx context.Context, id int64) (bool, e
 	return true, nil
 }
 
+func (f *fakeStore) UpdatePassword(ctx context.Context, id, hash string) error {
+	for email, u := range f.users {
+		if u.ID == id {
+			u.PasswordHash = hash
+			f.users[email] = u
+			return nil
+		}
+	}
+	return ErrNotFound
+}
+
+func (f *fakeStore) RevokeAllSessions(ctx context.Context, userID string) error {
+	now := time.Now()
+	for _, t := range f.refresh {
+		if t.UserID == userID && t.RevokedAt == nil {
+			t.RevokedAt = &now
+		}
+	}
+	return nil
+}
+
 func (f *fakeStore) RevokeFamily(ctx context.Context, familyID string) error {
 	now := time.Now()
 	for _, t := range f.refresh {

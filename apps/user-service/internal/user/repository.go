@@ -75,6 +75,24 @@ WHERE id = @id`,
 	)
 }
 
+// UpdatePassword stores a new password hash for the account with id, or
+// returns ErrNotFound.
+func (r *Repository) UpdatePassword(ctx context.Context, id, hash string) error {
+
+	res, err := r.db.ExecContext(ctx, `
+UPDATE users SET password_hash = @hash, updated_at = SYSUTCDATETIME() WHERE id = @id`,
+		sql.Named("id", id), sql.Named("hash", hash))
+	if err != nil {
+		return err
+	}
+
+	n, err := res.RowsAffected()
+	if err == nil && n == 0 {
+		err = ErrNotFound
+	}
+	return err
+}
+
 // FindByEmail returns the account with a normalized email, or ErrNotFound.
 func (r *Repository) FindByEmail(ctx context.Context, email string) (User, error) {
 	return r.findOne(ctx, `SELECT `+userColumns+` FROM users WHERE email = @p1`, email)

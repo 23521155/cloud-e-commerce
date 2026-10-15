@@ -188,3 +188,37 @@ export async function logout(refreshToken: string): Promise<void> {
     // The cookies are cleared anyway; the session then just runs out.
   }
 }
+
+export type ChangePasswordResult =
+  /** Every other session has ended; these tokens are the new session of this device. */
+  | { ok: true; tokens: SessionTokens }
+  | { ok: false; reason: "wrong-current" }
+  /** The new password was refused; the message says why. */
+  | { ok: false; reason: "invalid"; message: string }
+  | { ok: false; reason: "signed-out" }
+  | { ok: false; reason: "failed" };
+
+/** POST /api/users/me/password. */
+export async function changePassword(accessToken: string, current: string, password: string): Promise<ChangePasswordResult> {
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/me/password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}`, ...(await visitorHeaders()) },
+      body: JSON.stringify({ current, password }),
+      cache: "no-store",
+    });
+  } catch {
+    return { ok: false, reason: "failed" };
+  }
+
+  if (res.ok) return { ok: true, tokens: tokensOf((await res.json()) as TokensBody) };
+  if (res.status === 403) return { ok: false, reason: "wrong-current" };
+  if (res.status === 401) return { ok: false, reason: "signed-out" };
+  if (res.status === 400) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    return { ok: false, reason: "invalid", message: (body.error ?? "").replace(/^invalid input: /, "") };
+  }
+
+  return { ok: false, reason: "failed" };
+}

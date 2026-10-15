@@ -13,13 +13,28 @@ export type Profile = {
 
 export type SavedNotice = "profile" | "password";
 
-/** Why the ledger page was not saved; the details stay as they were. */
-export type ProfileError = "profile-invalid" | "profile-failed";
+/** Why the ledger page or the password slip was not saved; nothing changed. */
+export type AccountError = keyof typeof ACCOUNT_ERROR;
 
-const PROFILE_ERROR: Record<ProfileError, string> = {
+const ACCOUNT_ERROR = {
   "profile-invalid": "Not saved: one of the details is too long. Please shorten it and try again.",
   "profile-failed": "Not saved: the shop could not be reached. Please try again in a moment.",
-};
+  "password-wrong": "Not changed: the current password is not right.",
+  "password-invalid": "Not changed: the new password must be 8 to 128 characters.",
+  "password-mismatch": "Not changed: the new password and the repeat do not match.",
+  "password-failed": "Not changed: the shop could not be reached. Please try again in a moment.",
+} as const;
+
+export const isAccountError = (value: unknown): value is AccountError => typeof value === "string" && value in ACCOUNT_ERROR;
+
+function ErrorNotice({ error, prefix }: { error?: AccountError; prefix: "profile" | "password" }) {
+  if (!error?.startsWith(prefix)) return null;
+  return (
+    <p className="acc-notice m-0" role="alert">
+      {ACCOUNT_ERROR[error]}
+    </p>
+  );
+}
 
 const COUNTRIES = ["Vietnam", "United States", "United Kingdom", "Australia", "Canada", "Japan", "Singapore", "Other country"];
 
@@ -43,7 +58,7 @@ function Entry({ label, name, className = "", ...input }: { label: string; name:
 }
 
 /** Account settings as an open ledger: details across two pages, the password on a loose slip below. */
-export function Account({ profile, saved, error }: { profile: Profile; saved?: SavedNotice; error?: ProfileError }) {
+export function Account({ profile, saved, error }: { profile: Profile; saved?: SavedNotice; error?: AccountError }) {
   return (
     <div className="ledger">
       <form action={updateProfile} className="ledger__form">
@@ -83,11 +98,7 @@ export function Account({ profile, saved, error }: { profile: Profile; saved?: S
             <div className="ledger__foot">
               <SubmitButton pending="Saving…">Save the page</SubmitButton>
               <Notice show={saved === "profile"}>Saved.</Notice>
-              {error && (
-                <p className="acc-notice m-0" role="alert">
-                  {PROFILE_ERROR[error]}
-                </p>
-              )}
+              <ErrorNotice error={error} prefix="profile" />
             </div>
           </div>
         </div>
@@ -99,7 +110,8 @@ export function Account({ profile, saved, error }: { profile: Profile; saved?: S
         <h2 id="ledger-pass" className="ledger__slip-head">
           A loose slip: <em>your password</em>
         </h2>
-        <Notice show={saved === "password"}>New password set.</Notice>
+        <Notice show={saved === "password"}>New password set. Any other device you were signed in on has been signed out.</Notice>
+        <ErrorNotice error={error} prefix="password" />
         <form action={changePassword} className="ledger__slip-form">
           <PasswordField label="Current" name="current" autoComplete="current-password" />
           <PasswordField label="New" name="password" autoComplete="new-password" minLength={8} hint="At least 8 characters." />

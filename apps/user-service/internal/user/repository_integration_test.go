@@ -178,3 +178,40 @@ func TestRefreshTokenLifecycle(t *testing.T) {
 		t.Errorf("unknown token error = %v, want ErrNotFound", err)
 	}
 }
+
+func TestUpdatePasswordAndRevokeAllSessions(t *testing.T) {
+	repo := newTestRepo(t)
+	u := newUser(t, repo)
+	ctx := context.Background()
+
+	if _, err := repo.Create(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := repo.UpdatePassword(ctx, u.ID, "$argon2id$new"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := repo.FindByID(ctx, u.ID); got.PasswordHash != "$argon2id$new" {
+		t.Errorf("hash = %q, want the new one", got.PasswordHash)
+	}
+	if err := repo.UpdatePassword(ctx, "missing", "x"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("missing id error = %v, want ErrNotFound", err)
+	}
+
+	hashes := make([][]byte, 2)
+	for i := range hashes {
+		_, hashes[i], _ = newRefreshToken()
+		if err := repo.CreateRefreshToken(ctx, RefreshToken{UserID: u.ID, FamilyID: uuid.NewString(), TokenHash: hashes[i], ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := repo.RevokeAllSessions(ctx, u.ID); err != nil {
+		t.Fatal(err)
+	}
+	for _, h := range hashes {
+		if got, _ := repo.FindRefreshToken(ctx, h); got.RevokedAt == nil {
+			t.Errorf("token of family %s not revoked", got.FamilyID)
+		}
+	}
+}

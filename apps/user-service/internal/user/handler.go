@@ -31,6 +31,7 @@ type accounts interface {
 	Logout(ctx context.Context, refreshToken string) error
 	Me(ctx context.Context, id string) (User, error)
 	UpdateProfile(ctx context.Context, id, name string, p Profile) (User, error)
+	ChangePassword(ctx context.Context, id, current, password, device string) (User, Tokens, error)
 }
 
 type Handler struct {
@@ -51,6 +52,7 @@ func (h *Handler) Register(api *gin.RouterGroup) {
 	api.POST("/auth/logout", h.logout)
 	api.GET("/me", h.me)
 	api.PUT("/me", h.updateMe)
+	api.POST("/me/password", h.changePassword)
 }
 
 // registerRequest is the body of POST /auth/register. Fields are checked by
@@ -244,6 +246,43 @@ func (h *Handler) updateMe(c *gin.Context) {
 	c.JSON(http.StatusOK, u)
 }
 
+// changePasswordRequest is the body of POST /me/password.
+type changePasswordRequest struct {
+	Current  string `json:"current"`
+	Password string `json:"password"`
+}
+
+// changePassword answers with new tokens like a sign-in: every earlier
+// session of the account has ended.
+func (h *Handler) changePassword(c *gin.Context) {
+
+	id := c.GetHeader(userIDHeader)
+	if id == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "sign in required"})
+		return
+	}
+
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBodyBytes)
+
+	var req changePasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	u, tokens, err := h.service.ChangePassword(c.Request.Context(), id, req.Current, req.Password, c.GetHeader(deviceHeader))
+	if errors.Is(err, ErrNotFound) {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "sign in required"})
+		return
+	}
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, newLoginResponse(u, tokens))
+}
+
 // fail turns a service error into a response. It is the one place that
 // knows which error means which status.
 func (h *Handler) fail(c *gin.Context, err error) {
@@ -258,6 +297,10 @@ func (h *Handler) fail(c *gin.Context, err error) {
 
 	case errors.Is(err, ErrInvalidCredentials):
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "email or password is incorrect"})
+
+	case errors.Is(err, ErrWrongPassword):
+		// 403, not 401: the reader is signed in, the confirmation is wrong.
+		c.JSON(http.StatusForbidden, gin.H{"error": "current password is incorrect"})
 
 	case errors.Is(err, ErrInvalidRefreshToken):
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "sign in required"})

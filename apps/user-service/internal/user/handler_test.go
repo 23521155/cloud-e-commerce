@@ -32,6 +32,7 @@ type fakeAccounts struct {
 
 	gotDevice  string
 	gotRefresh string
+	gotNewPass string
 }
 
 func (f *fakeAccounts) Register(ctx context.Context, in RegisterInput) (User, error) {
@@ -46,6 +47,11 @@ func (f *fakeAccounts) Login(ctx context.Context, email, password, device string
 
 func (f *fakeAccounts) Refresh(ctx context.Context, refreshToken, device string) (User, Tokens, error) {
 	f.gotRefresh, f.gotDevice = refreshToken, device
+	return f.user, f.tokens, f.err
+}
+
+func (f *fakeAccounts) ChangePassword(ctx context.Context, id, current, password, device string) (User, Tokens, error) {
+	f.gotID, f.gotPass, f.gotNewPass, f.gotDevice = id, current, password, device
 	return f.user, f.tokens, f.err
 }
 
@@ -324,5 +330,46 @@ func TestLogoutHandler(t *testing.T) {
 
 	if w.Code != http.StatusNoContent || svc.gotRefresh != "the-refresh" {
 		t.Errorf("status = %d, service got %q", w.Code, svc.gotRefresh)
+	}
+}
+
+func TestChangePasswordHandler(t *testing.T) {
+
+	svc := &fakeAccounts{user: User{ID: "u1"}, tokens: Tokens{Access: token.Access{Token: "fresh.jwt"}, Refresh: "fresh-refresh"}}
+
+	w := send(t, svc, http.MethodPost, "/me/password", `{"current":"old password","password":"new password"}`,
+		map[string]string{"X-User-ID": "u1", "X-Device-Name": "Firefox on Windows"})
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body %s", w.Code, w.Body)
+	}
+	if svc.gotID != "u1" || svc.gotPass != "old password" || svc.gotNewPass != "new password" || svc.gotDevice != "Firefox on Windows" {
+		t.Errorf("service got %q %q %q %q", svc.gotID, svc.gotPass, svc.gotNewPass, svc.gotDevice)
+	}
+	if !strings.Contains(w.Body.String(), `"refreshToken":"fresh-refresh"`) {
+		t.Errorf("body = %s, want the new tokens", w.Body)
+	}
+}
+
+func TestChangePasswordHandlerErrors(t *testing.T) {
+
+	tests := []struct {
+		name    string
+		headers map[string]string
+		err     error
+		want    int
+	}{
+		{"signed out", nil, nil, http.StatusUnauthorized},
+		{"wrong current password", map[string]string{"X-User-ID": "u1"}, ErrWrongPassword, http.StatusForbidden},
+		{"short new password", map[string]string{"X-User-ID": "u1"}, fmt.Errorf("%w: password must be 8 to 128 characters", ErrInvalidInput), http.StatusBadRequest},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := send(t, &fakeAccounts{err: tt.err}, http.MethodPost, "/me/password", `{"current":"a","password":"b"}`, tt.headers)
+			if w.Code != tt.want {
+				t.Errorf("status = %d, want %d", w.Code, tt.want)
+			}
+		})
 	}
 }

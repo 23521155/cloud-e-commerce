@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { Account, type Profile, type ProfileError, type SavedNotice } from "@/components/account/Account";
+import { Account, isAccountError, type Profile, type SavedNotice } from "@/components/account/Account";
 import { MotionController } from "@/components/motion/MotionController";
 import { getSession } from "@/lib/session";
 import { me } from "@/lib/user-api";
@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 export default async function AccountPage({ searchParams }: PageProps<"/account">) {
   const sp = await searchParams;
   const saved: SavedNotice | undefined = sp.saved === "profile" || sp.saved === "password" ? sp.saved : undefined;
-  const error: ProfileError | undefined = sp.error === "profile-invalid" || sp.error === "profile-failed" ? sp.error : undefined;
+  const error = isAccountError(sp.error) ? sp.error : undefined;
 
   const session = await getSession();
   if (!session) redirect("/sign-in?next=/account");

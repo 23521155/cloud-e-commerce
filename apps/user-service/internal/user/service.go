@@ -28,6 +28,10 @@ var (
 
 	// ErrNotFound means no account has the id or email.
 	ErrNotFound = errors.New("user not found")
+
+	// ErrWrongPassword means the current password given to confirm a
+	// change is not the account's.
+	ErrWrongPassword = errors.New("current password is incorrect")
 )
 
 // Field limits, matched by the columns in migrations. The profile limits are
@@ -55,6 +59,7 @@ type store interface {
 	FindByEmail(ctx context.Context, email string) (User, error)
 	FindByID(ctx context.Context, id string) (User, error)
 	UpdateProfile(ctx context.Context, id, name string, p Profile) (User, error)
+	UpdatePassword(ctx context.Context, id, hash string) error
 
 	sessionStore
 }
@@ -188,6 +193,48 @@ func (s *Service) UpdateProfile(ctx context.Context, id, name string, p Profile)
 	}
 
 	return s.store.UpdateProfile(ctx, id, name, p)
+}
+
+// ChangePassword sets a new password once the current one is confirmed.
+// Every session of the account ends, so a device someone else signed in on
+// is signed out; the device making the change gets a new session.
+func (s *Service) ChangePassword(ctx context.Context, id, current, password, device string) (User, Tokens, error) {
+
+	u, err := s.store.FindByID(ctx, id)
+	if err != nil {
+		return User{}, Tokens{}, err
+	}
+
+	ok, err := verifyPassword(current, u.PasswordHash)
+	if err != nil {
+		return User{}, Tokens{}, err
+	}
+	if !ok {
+		return User{}, Tokens{}, ErrWrongPassword
+	}
+
+	if err := validatePassword(password); err != nil {
+		return User{}, Tokens{}, err
+	}
+
+	hash, err := hashPassword(password)
+	if err != nil {
+		return User{}, Tokens{}, err
+	}
+
+	if err := s.store.UpdatePassword(ctx, id, hash); err != nil {
+		return User{}, Tokens{}, err
+	}
+	if err := s.store.RevokeAllSessions(ctx, id); err != nil {
+		return User{}, Tokens{}, err
+	}
+
+	tokens, err := s.startSession(ctx, u, device)
+	if err != nil {
+		return User{}, Tokens{}, err
+	}
+
+	return u, tokens, nil
 }
 
 // dummyHash is a hash of a random password with the current cost, for
