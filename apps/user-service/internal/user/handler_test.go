@@ -55,6 +55,16 @@ func (f *fakeAccounts) ChangePassword(ctx context.Context, id, current, password
 	return f.user, f.tokens, f.err
 }
 
+func (f *fakeAccounts) VerifyEmail(ctx context.Context, token string) (User, error) {
+	f.gotRefresh = token
+	return f.user, f.err
+}
+
+func (f *fakeAccounts) ResendVerification(ctx context.Context, id string) error {
+	f.gotID = id
+	return f.err
+}
+
 func (f *fakeAccounts) Logout(ctx context.Context, refreshToken string) error {
 	f.gotRefresh = refreshToken
 	return f.err
@@ -367,6 +377,50 @@ func TestChangePasswordHandlerErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := send(t, &fakeAccounts{err: tt.err}, http.MethodPost, "/me/password", `{"current":"a","password":"b"}`, tt.headers)
+			if w.Code != tt.want {
+				t.Errorf("status = %d, want %d", w.Code, tt.want)
+			}
+		})
+	}
+}
+
+func TestVerifyEmailHandler(t *testing.T) {
+
+	verified := time.Date(2026, 10, 16, 9, 0, 0, 0, time.UTC)
+	svc := &fakeAccounts{user: User{ID: "u1", Email: "reader@example.com", EmailVerifiedAt: &verified}}
+
+	w := send(t, svc, http.MethodPost, "/auth/verify-email", `{"token":"from-the-link"}`, nil)
+
+	if w.Code != http.StatusOK || svc.gotRefresh != "from-the-link" {
+		t.Fatalf("status = %d, token %q; body %s", w.Code, svc.gotRefresh, w.Body)
+	}
+	if !strings.Contains(w.Body.String(), `"emailVerifiedAt":"2026-10-16T09:00:00Z"`) {
+		t.Errorf("body = %s", w.Body)
+	}
+
+	w = send(t, &fakeAccounts{err: ErrInvalidEmailToken}, http.MethodPost, "/auth/verify-email", `{"token":"old"}`, nil)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("used link: status = %d, want 400", w.Code)
+	}
+}
+
+func TestResendVerificationHandler(t *testing.T) {
+
+	tests := []struct {
+		name    string
+		headers map[string]string
+		err     error
+		want    int
+	}{
+		{"sent", map[string]string{"X-User-ID": "u1"}, nil, http.StatusAccepted},
+		{"signed out", nil, nil, http.StatusUnauthorized},
+		{"already confirmed", map[string]string{"X-User-ID": "u1"}, ErrAlreadyVerified, http.StatusConflict},
+		{"too soon", map[string]string{"X-User-ID": "u1"}, ErrTooSoon, http.StatusTooManyRequests},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := send(t, &fakeAccounts{err: tt.err}, http.MethodPost, "/me/verify-email", "", tt.headers)
 			if w.Code != tt.want {
 				t.Errorf("status = %d, want %d", w.Code, tt.want)
 			}

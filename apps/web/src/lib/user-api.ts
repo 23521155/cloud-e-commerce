@@ -10,7 +10,15 @@ export type NewAccount = { name: string; email: string; password: string };
 export type ProfileDetails = { phone: string; address: string; city: string; postalCode: string; country: string };
 
 /** The account as the user service stored it. */
-export type Account = { id: string; email: string; name: string; role: string; createdAt: string } & ProfileDetails;
+export type Account = {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  createdAt: string;
+  /** When the reader confirmed the address; null until then. */
+  emailVerifiedAt: string | null;
+} & ProfileDetails;
 
 export type RegisterResult =
   | { ok: true; account: Account }
@@ -219,6 +227,53 @@ export async function changePassword(accessToken: string, current: string, passw
     const body = (await res.json().catch(() => ({}))) as { error?: string };
     return { ok: false, reason: "invalid", message: (body.error ?? "").replace(/^invalid input: /, "") };
   }
+
+  return { ok: false, reason: "failed" };
+}
+
+export type VerifyEmailResult = { ok: true } | { ok: false; reason: "invalid" } | { ok: false; reason: "failed" };
+
+/** POST /api/users/auth/verify-email with the token from the link in the email. No sign-in needed. */
+export async function verifyEmail(token: string): Promise<VerifyEmailResult> {
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/auth/verify-email`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(await forwardedFor()) },
+      body: JSON.stringify({ token }),
+      cache: "no-store",
+    });
+  } catch {
+    return { ok: false, reason: "failed" };
+  }
+
+  if (res.ok) return { ok: true };
+  if (res.status === 400) return { ok: false, reason: "invalid" };
+
+  return { ok: false, reason: "failed" };
+}
+
+export type ResendResult =
+  | { ok: true }
+  | { ok: false; reason: "already-verified" | "too-soon" | "signed-out" | "failed" };
+
+/** POST /api/users/me/verify-email: a new confirmation link to the reader's address. */
+export async function resendVerification(accessToken: string): Promise<ResendResult> {
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/me/verify-email`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}`, ...(await forwardedFor()) },
+      cache: "no-store",
+    });
+  } catch {
+    return { ok: false, reason: "failed" };
+  }
+
+  if (res.status === 202) return { ok: true };
+  if (res.status === 409) return { ok: false, reason: "already-verified" };
+  if (res.status === 429) return { ok: false, reason: "too-soon" };
+  if (res.status === 401) return { ok: false, reason: "signed-out" };
 
   return { ok: false, reason: "failed" };
 }

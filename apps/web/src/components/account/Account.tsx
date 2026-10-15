@@ -1,5 +1,5 @@
 import { PasswordField, SubmitButton } from "@/components/auth/AuthClient";
-import { changePassword, updateProfile } from "@/lib/account-actions";
+import { changePassword, resendVerification, updateProfile } from "@/lib/account-actions";
 
 export type Profile = {
   name: string;
@@ -11,7 +11,7 @@ export type Profile = {
   country: string;
 };
 
-export type SavedNotice = "profile" | "password";
+export type SavedNotice = "profile" | "password" | "verify-sent";
 
 /** Why the ledger page or the password slip was not saved; nothing changed. */
 export type AccountError = keyof typeof ACCOUNT_ERROR;
@@ -23,11 +23,13 @@ const ACCOUNT_ERROR = {
   "password-invalid": "Not changed: the new password must be 8 to 128 characters.",
   "password-mismatch": "Not changed: the new password and the repeat do not match.",
   "password-failed": "Not changed: the shop could not be reached. Please try again in a moment.",
+  "verify-too-soon": "A link went out a moment ago. Check your inbox, or ask again in a minute.",
+  "verify-failed": "The link could not be sent right now. Please try again in a moment.",
 } as const;
 
 export const isAccountError = (value: unknown): value is AccountError => typeof value === "string" && value in ACCOUNT_ERROR;
 
-function ErrorNotice({ error, prefix }: { error?: AccountError; prefix: "profile" | "password" }) {
+function ErrorNotice({ error, prefix }: { error?: AccountError; prefix: "profile" | "password" | "verify" }) {
   if (!error?.startsWith(prefix)) return null;
   return (
     <p className="acc-notice m-0" role="alert">
@@ -58,7 +60,7 @@ function Entry({ label, name, className = "", ...input }: { label: string; name:
 }
 
 /** Account settings as an open ledger: details across two pages, the password on a loose slip below. */
-export function Account({ profile, saved, error }: { profile: Profile; saved?: SavedNotice; error?: AccountError }) {
+export function Account({ profile, emailVerified, saved, error }: { profile: Profile; emailVerified: boolean; saved?: SavedNotice; error?: AccountError }) {
   return (
     <div className="ledger">
       <form action={updateProfile} className="ledger__form">
@@ -71,6 +73,17 @@ export function Account({ profile, saved, error }: { profile: Profile; saved?: S
             <Entry label="Full name" name="name" autoComplete="name" required maxLength={100} defaultValue={profile.name} />
             {/* Changing the email needs the new address confirmed, which the shop cannot do yet */}
             <Entry label="Email" name="email" type="email" autoComplete="email" readOnly defaultValue={profile.email} />
+            {!emailVerified && (
+              <p className="ledger__margin">
+                Not confirmed yet: follow the link we emailed you.{" "}
+                {/* A second submit button of the same form: the ledger page cannot hold a nested form */}
+                <button type="submit" formAction={resendVerification} formNoValidate className="ledger__to-slip under-hover">
+                  Send the link again
+                </button>
+              </p>
+            )}
+            <Notice show={saved === "verify-sent"}>A new link is on its way to {profile.email}.</Notice>
+            <ErrorNotice error={error} prefix="verify" />
             <Entry label="Phone" name="phone" type="tel" autoComplete="tel" maxLength={20} defaultValue={profile.phone} placeholder="only the courier sees it" />
             <p className="ledger__margin">Kept by the shop, never shown to other readers.</p>
             {/* The password slip sits below the book, out of the first screen; point to it from the page */}

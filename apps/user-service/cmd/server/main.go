@@ -70,8 +70,9 @@ func main() {
 		WebURL:     cfg.WebURL,
 	}), logger.Log)
 
-	// Emails and events wait in the outbox table until a relay puts them on
-	// their queues. Stopped with the server.
+	// Emails and events (outbox.QueueEmail, outbox.QueueUserEmailVerified)
+	// wait in the outbox table until a relay puts them on their queues.
+	// Stopped with the server.
 	relayCtx, stopRelay := context.WithCancel(context.Background())
 	defer stopRelay()
 

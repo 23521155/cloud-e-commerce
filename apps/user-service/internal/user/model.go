@@ -17,7 +17,9 @@ type User struct {
 	PasswordHash    string     `db:"password_hash" json:"-"`
 	Name            string     `db:"name" json:"name"`
 	Role            string     `db:"role" json:"role"`
-	EmailVerifiedAt *time.Time `db:"email_verified_at" json:"-"`
+	// EmailVerifiedAt is when the owner of the address confirmed it; nil
+	// until then.
+	EmailVerifiedAt *time.Time `db:"email_verified_at" json:"emailVerifiedAt"`
 	CreatedAt       time.Time  `db:"created_at" json:"createdAt"`
 	UpdatedAt       time.Time  `db:"updated_at" json:"-"`
 

@@ -32,6 +32,8 @@ type accounts interface {
 	Me(ctx context.Context, id string) (User, error)
 	UpdateProfile(ctx context.Context, id, name string, p Profile) (User, error)
 	ChangePassword(ctx context.Context, id, current, password, device string) (User, Tokens, error)
+	VerifyEmail(ctx context.Context, token string) (User, error)
+	ResendVerification(ctx context.Context, id string) error
 }
 
 type Handler struct {
@@ -53,6 +55,8 @@ func (h *Handler) Register(api *gin.RouterGroup) {
 	api.GET("/me", h.me)
 	api.PUT("/me", h.updateMe)
 	api.POST("/me/password", h.changePassword)
+	api.POST("/auth/verify-email", h.verifyEmail)
+	api.POST("/me/verify-email", h.resendVerification)
 }
 
 // registerRequest is the body of POST /auth/register. Fields are checked by
@@ -283,6 +287,55 @@ func (h *Handler) changePassword(c *gin.Context) {
 	c.JSON(http.StatusOK, newLoginResponse(u, tokens))
 }
 
+// verifyEmailRequest is the body of POST /auth/verify-email: the token from
+// the link in the email. No sign-in is needed: the token proves the reader
+// holds the mailbox.
+type verifyEmailRequest struct {
+	Token string `json:"token"`
+}
+
+func (h *Handler) verifyEmail(c *gin.Context) {
+
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBodyBytes)
+
+	var req verifyEmailRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.Token == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	u, err := h.service.VerifyEmail(c.Request.Context(), req.Token)
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"email": u.Email, "emailVerifiedAt": u.EmailVerifiedAt})
+}
+
+// resendVerification answers POST /me/verify-email: a new confirmation
+// link to the signed-in account's address.
+func (h *Handler) resendVerification(c *gin.Context) {
+
+	id := c.GetHeader(userIDHeader)
+	if id == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "sign in required"})
+		return
+	}
+
+	err := h.service.ResendVerification(c.Request.Context(), id)
+	if errors.Is(err, ErrNotFound) {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "sign in required"})
+		return
+	}
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+
+	c.Status(http.StatusAccepted)
+}
+
 // fail turns a service error into a response. It is the one place that
 // knows which error means which status.
 func (h *Handler) fail(c *gin.Context, err error) {
@@ -301,6 +354,15 @@ func (h *Handler) fail(c *gin.Context, err error) {
 	case errors.Is(err, ErrWrongPassword):
 		// 403, not 401: the reader is signed in, the confirmation is wrong.
 		c.JSON(http.StatusForbidden, gin.H{"error": "current password is incorrect"})
+
+	case errors.Is(err, ErrInvalidEmailToken):
+		c.JSON(http.StatusBadRequest, gin.H{"error": "this link has been used or has expired"})
+
+	case errors.Is(err, ErrAlreadyVerified):
+		c.JSON(http.StatusConflict, gin.H{"error": "the email address is already confirmed"})
+
+	case errors.Is(err, ErrTooSoon):
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "an email was sent a moment ago, please wait a minute"})
 
 	case errors.Is(err, ErrInvalidRefreshToken):
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "sign in required"})

@@ -63,6 +63,7 @@ type store interface {
 	UpdatePassword(ctx context.Context, id, hash string) error
 
 	sessionStore
+	verificationStore
 }
 
 // issuer signs access tokens; *token.Issuer outside tests.

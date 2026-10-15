@@ -1,9 +1,13 @@
 import Link from "next/link";
 import { RegisterForm, SignInForm, SubmitButton, TextField } from "@/components/auth/AuthClient";
 import { BookCover } from "@/components/ui/BookArt";
+import { verifyEmail } from "@/lib/account-actions";
 import { continueWithGoogle, requestReset } from "@/lib/auth-actions";
 
-export type AuthMode = "sign-in" | "register" | "forgot";
+export type AuthMode = "sign-in" | "register" | "forgot" | "verify";
+
+/** The confirmation page's state: the token from the link, or how confirming went. */
+export type VerifyState = { token?: string; done?: boolean; error?: "invalid" | "failed" };
 
 function GoogleButton({ label }: { label: string }) {
   return (
@@ -56,16 +60,50 @@ function ForgotForm({ sent }: { sent: boolean }) {
   );
 }
 
+function VerifyForm({ token, done, error }: VerifyState) {
+  if (done) {
+    return (
+      <div className="auth__sent" role="status">
+        <p className="m-0">Thank you: your email address is confirmed.</p>
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <p role="alert" className="auth__error m-0">
+        {error === "invalid"
+          ? "This link has already been used or has expired. You can ask for a new one on your account page."
+          : "The address could not be confirmed right now. Please open the link again in a moment."}
+      </p>
+    );
+  }
+  if (!token) {
+    return (
+      <p role="alert" className="auth__error m-0">
+        This page needs the link from the email. Please open it from there.
+      </p>
+    );
+  }
+  return (
+    <form action={verifyEmail} className="auth__form">
+      <input type="hidden" name="token" value={token} />
+      <SubmitButton pending="Confirming…">Confirm my email</SubmitButton>
+    </form>
+  );
+}
+
 const COPY: Record<AuthMode, { card: string; title: [string, string]; intro: string }> = {
   "sign-in": { card: "Reader's card", title: ["Welcome", "back"], intro: "Sign in to see your basket and orders." },
   register: { card: "New reader", title: ["Open an", "account"], intro: "Keep a basket across devices and follow your orders." },
   forgot: { card: "Lost card", title: ["Reset your", "password"], intro: "Enter the email you signed up with and we will send a reset link." },
+  verify: { card: "Reader's card", title: ["Confirm your", "email"], intro: "One click, and the shop knows this address is yours." },
 };
 
 const SWITCH: Record<AuthMode, { text: string; link: string; href: string }> = {
   "sign-in": { text: "New here?", link: "Create an account", href: "/register" },
   register: { text: "Already have an account?", link: "Sign in", href: "/sign-in" },
   forgot: { text: "Remembered it?", link: "Back to sign in", href: "/sign-in" },
+  verify: { text: "Done here?", link: "Go to your account", href: "/account" },
 };
 
 const SHELF = [
@@ -75,7 +113,19 @@ const SHELF = [
 ];
 
 /** Every auth screen: heading and a few books on the left, the form on an index card on the right. */
-export function AuthPage({ mode, sent = false, registered = false, next }: { mode: AuthMode; sent?: boolean; registered?: boolean; next?: string }) {
+export function AuthPage({
+  mode,
+  sent = false,
+  registered = false,
+  next,
+  verify,
+}: {
+  mode: AuthMode;
+  sent?: boolean;
+  registered?: boolean;
+  next?: string;
+  verify?: VerifyState;
+}) {
   const copy = COPY[mode];
   const sw = SWITCH[mode];
   return (
@@ -109,6 +159,7 @@ export function AuthPage({ mode, sent = false, registered = false, next }: { mod
             {mode === "sign-in" && <SignIn registered={registered} next={next} />}
             {mode === "register" && <RegisterForm />}
             {mode === "forgot" && <ForgotForm sent={sent} />}
+            {mode === "verify" && <VerifyForm {...verify} />}
             <p className="auth__switch">
               {sw.text}{" "}
               <Link href={sw.href} className="under-hover ml-1">

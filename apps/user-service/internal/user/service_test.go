@@ -55,6 +55,50 @@ func (f *fakeStore) MarkRefreshTokenUsed(ctx context.Context, id int64) (bool, e
 	return true, nil
 }
 
+func (f *fakeStore) CreateEmailToken(ctx context.Context, t EmailToken, messages ...outbox.Message) error {
+	t.CreatedAt = time.Now()
+	f.emailTokens = append(f.emailTokens, t)
+	f.outbox = append(f.outbox, messages...)
+	return nil
+}
+
+func (f *fakeStore) LastEmailTokenAt(ctx context.Context, userID, purpose string) (time.Time, bool, error) {
+	var last time.Time
+	ok := false
+	for _, t := range f.emailTokens {
+		if t.UserID == userID && t.Purpose == purpose && (!ok || t.CreatedAt.After(last)) {
+			last, ok = t.CreatedAt, true
+		}
+	}
+	return last, ok, nil
+}
+
+func (f *fakeStore) VerifyEmail(ctx context.Context, hash []byte, events func(User) ([]outbox.Message, error)) (User, error) {
+	for i := range f.emailTokens {
+		t := &f.emailTokens[i]
+		if string(t.TokenHash) != string(hash) || t.Purpose != PurposeVerifyEmail || t.UsedAt != nil || !time.Now().Before(t.ExpiresAt) {
+			continue
+		}
+		now := time.Now()
+		t.UsedAt = &now
+		u, ok := f.users[t.Email]
+		if !ok || u.ID != t.UserID {
+			return User{}, ErrInvalidEmailToken
+		}
+		if u.EmailVerifiedAt == nil {
+			u.EmailVerifiedAt = &now
+		}
+		f.users[t.Email] = u
+		messages, err := events(u)
+		if err != nil {
+			return User{}, err
+		}
+		f.outbox = append(f.outbox, messages...)
+		return u, nil
+	}
+	return User{}, ErrInvalidEmailToken
+}
+
 func (f *fakeStore) UpdatePassword(ctx context.Context, id, hash string) error {
 	for email, u := range f.users {
 		if u.ID == id {
@@ -97,6 +141,7 @@ func (f *fakeStore) Create(ctx context.Context, u User, verify EmailToken, messa
 		return User{}, ErrEmailTaken
 	}
 	f.users[u.Email] = u
+	verify.CreatedAt = time.Now()
 	f.emailTokens = append(f.emailTokens, verify)
 	f.outbox = append(f.outbox, messages...)
 	return u, nil

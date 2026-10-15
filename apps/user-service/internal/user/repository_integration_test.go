@@ -255,3 +255,52 @@ func TestCreateWritesTheLinkAndTheEmailWithTheAccount(t *testing.T) {
 		t.Errorf("messages = %d after a refused account, want still 1", messages)
 	}
 }
+
+func TestVerifyEmailUsesTheLinkOnce(t *testing.T) {
+	repo := newTestRepo(t)
+	u := newUser(t, repo)
+	ctx := context.Background()
+
+	raw, hash, _ := newSecret()
+	verify := EmailToken{UserID: u.ID, Purpose: PurposeVerifyEmail, Email: u.Email, TokenHash: hash, ExpiresAt: time.Now().Add(time.Hour)}
+	if _, err := repo.Create(ctx, u, verify); err != nil {
+		t.Fatal(err)
+	}
+
+	noEvents := func(User) ([]outbox.Message, error) { return nil, nil }
+
+	got, err := repo.VerifyEmail(ctx, hashToken(raw), noEvents)
+	if err != nil || got.EmailVerifiedAt == nil {
+		t.Fatalf("VerifyEmail = %+v, %v", got, err)
+	}
+	if _, err := repo.VerifyEmail(ctx, hashToken(raw), noEvents); !errors.Is(err, ErrInvalidEmailToken) {
+		t.Errorf("second use error = %v, want ErrInvalidEmailToken", err)
+	}
+
+	at, ok, err := repo.LastEmailTokenAt(ctx, u.ID, PurposeVerifyEmail)
+	if err != nil || !ok || at.IsZero() {
+		t.Errorf("LastEmailTokenAt = %v, %v, %v", at, ok, err)
+	}
+	if _, ok, _ := repo.LastEmailTokenAt(ctx, "missing", PurposeVerifyEmail); ok {
+		t.Error("LastEmailTokenAt found a token for no account")
+	}
+}
+
+func TestVerifyEmailExpiredLink(t *testing.T) {
+	repo := newTestRepo(t)
+	u := newUser(t, repo)
+	ctx := context.Background()
+
+	raw, hash, _ := newSecret()
+	expired := EmailToken{UserID: u.ID, Purpose: PurposeVerifyEmail, Email: u.Email, TokenHash: hash, ExpiresAt: time.Now().Add(-time.Minute)}
+	if _, err := repo.Create(ctx, u, expired); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := repo.VerifyEmail(ctx, hashToken(raw), func(User) ([]outbox.Message, error) { return nil, nil }); !errors.Is(err, ErrInvalidEmailToken) {
+		t.Errorf("expired link error = %v, want ErrInvalidEmailToken", err)
+	}
+	if got, _ := repo.FindByID(ctx, u.ID); got.EmailVerifiedAt != nil {
+		t.Error("an expired link confirmed the address")
+	}
+}

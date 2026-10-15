@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 
 export default async function AccountPage({ searchParams }: PageProps<"/account">) {
   const sp = await searchParams;
-  const saved: SavedNotice | undefined = sp.saved === "profile" || sp.saved === "password" ? sp.saved : undefined;
+  const saved: SavedNotice | undefined = sp.saved === "profile" || sp.saved === "password" || sp.saved === "verify-sent" ? sp.saved : undefined;
   const error = isAccountError(sp.error) ? sp.error : undefined;
 
   const session = await getSession();
@@ -52,7 +52,7 @@ export default async function AccountPage({ searchParams }: PageProps<"/account"
           </p>
         </div>
 
-        <Account profile={profile} saved={saved} error={error} />
+        <Account profile={profile} emailVerified={account.emailVerifiedAt !== null} saved={saved} error={error} />
       </section>
     </>
   );

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/fizzisme/user-service/internal/outbox"
 	"github.com/jmoiron/sqlx"
@@ -149,4 +150,87 @@ func isUniqueViolation(err error) bool {
 	var sqlErr mssql.Error
 	return errors.As(err, &sqlErr) &&
 		(sqlErr.Number == sqlUniqueConstraint || sqlErr.Number == sqlUniqueIndex)
+}
+
+// CreateEmailToken stores t with the messages that send it, in one
+// transaction.
+func (r *Repository) CreateEmailToken(ctx context.Context, t EmailToken, messages ...outbox.Message) error {
+
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if err := insertEmailToken(ctx, tx, t); err != nil {
+		return err
+	}
+	if err := outbox.Add(ctx, tx, messages...); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+// LastEmailTokenAt is when the newest token of purpose was made for userID.
+func (r *Repository) LastEmailTokenAt(ctx context.Context, userID, purpose string) (time.Time, bool, error) {
+
+	var at sql.NullTime
+	err := r.db.GetContext(ctx, &at, `
+SELECT MAX(created_at) FROM email_tokens WHERE user_id = @user_id AND purpose = @purpose`,
+		sql.Named("user_id", userID), sql.Named("purpose", purpose))
+
+	return at.Time, at.Valid, err
+}
+
+// VerifyEmail uses a verify-email token and confirms its address, with the
+// outbox messages events gives, in one transaction.
+func (r *Repository) VerifyEmail(ctx context.Context, hash []byte, events func(User) ([]outbox.Message, error)) (User, error) {
+
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return User{}, err
+	}
+	defer tx.Rollback()
+
+	// Using the token and reading it is one statement, so a link clicked
+	// twice at once confirms once.
+	var t EmailToken
+	err = tx.GetContext(ctx, &t, `
+UPDATE email_tokens SET used_at = SYSUTCDATETIME()
+OUTPUT inserted.id, inserted.user_id, inserted.purpose, inserted.email, inserted.token_hash,
+       inserted.created_at, inserted.expires_at, inserted.used_at
+WHERE token_hash = @hash AND purpose = @purpose AND used_at IS NULL AND expires_at > SYSUTCDATETIME()`,
+		sql.Named("hash", hash), sql.Named("purpose", PurposeVerifyEmail))
+	if errors.Is(err, sql.ErrNoRows) {
+		return User{}, ErrInvalidEmailToken
+	}
+	if err != nil {
+		return User{}, err
+	}
+
+	// The address must still be the account's: a link to an address the
+	// account has since left confirms nothing.
+	var u User
+	err = tx.GetContext(ctx, &u, `
+UPDATE users SET email_verified_at = COALESCE(email_verified_at, SYSUTCDATETIME()), updated_at = SYSUTCDATETIME()
+OUTPUT `+outputColumns("INSERTED")+`
+WHERE id = @id AND email = @email`,
+		sql.Named("id", t.UserID), sql.Named("email", t.Email))
+	if errors.Is(err, sql.ErrNoRows) {
+		return User{}, ErrInvalidEmailToken
+	}
+	if err != nil {
+		return User{}, err
+	}
+
+	messages, err := events(u)
+	if err != nil {
+		return User{}, err
+	}
+	if err := outbox.Add(ctx, tx, messages...); err != nil {
+		return User{}, err
+	}
+
+	return u, tx.Commit()
 }

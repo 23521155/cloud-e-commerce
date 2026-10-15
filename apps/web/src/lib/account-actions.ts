@@ -4,7 +4,7 @@
 // come back to /account as a code in the query string.
 import { redirect } from "next/navigation";
 import { getSession, renewSession, startSession } from "@/lib/session";
-import { changePassword as savePassword, updateProfile as saveProfile } from "@/lib/user-api";
+import { changePassword as savePassword, resendVerification as sendLinkAgain, updateProfile as saveProfile, verifyEmail as confirmEmail } from "@/lib/user-api";
 
 const text = (formData: FormData, name: string) => String(formData.get(name) ?? "").trim();
 
@@ -55,5 +55,35 @@ export async function changePassword(formData: FormData) {
       redirect("/account?error=password-invalid#password-slip");
     default:
       redirect("/account?error=password-failed#password-slip");
+  }
+}
+
+/**
+ * Confirms the address from the link in the email. The link opens a page with a button rather than
+ * confirming on its own, so a mail scanner that opens links cannot confirm for the reader.
+ */
+export async function verifyEmail(formData: FormData) {
+  const result = await confirmEmail(String(formData.get("token") ?? ""));
+  if (result.ok) redirect("/verify-email?done=1");
+  redirect(`/verify-email?error=${result.reason}`);
+}
+
+/** Sends the confirmation link again from the account page. */
+export async function resendVerification() {
+  const session = await getSession();
+  if (!session) redirect("/sign-in?next=/account");
+
+  const result = await sendLinkAgain(session.token);
+  if (result.ok) redirect("/account?saved=verify-sent");
+
+  switch (result.reason) {
+    case "signed-out":
+      redirect("/sign-in?next=/account");
+    case "already-verified":
+      redirect("/account");
+    case "too-soon":
+      redirect("/account?error=verify-too-soon");
+    default:
+      redirect("/account?error=verify-failed");
   }
 }
