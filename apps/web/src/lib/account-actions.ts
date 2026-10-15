@@ -8,6 +8,7 @@ import { getSession, renewSession, startSession } from "@/lib/session";
 import {
   changePassword as savePassword,
   confirmTotp,
+  disableTotp as turnOffTotp,
   resendVerification as sendLinkAgain,
   setupTotp,
   updateProfile as saveProfile,
@@ -96,8 +97,11 @@ export async function resendVerification() {
   }
 }
 
-/** The two-step sign-in slip while it is being set up: the QR code to scan, or why it failed. */
-export type TotpSetupState = { qr?: string; secret?: string; error?: string };
+/**
+ * The two-step sign-in slip while it is being set up: the QR code to scan, why a step failed, and
+ * once it is on, the recovery codes to keep.
+ */
+export type TotpSetupState = { qr?: string; secret?: string; error?: string; recoveryCodes?: string[] };
 
 /** Starts setup: a new secret, shown as a QR code for the authenticator app and as text. */
 export async function startTotpSetup(): Promise<TotpSetupState> {
@@ -132,7 +136,8 @@ export async function confirmTotpSetup(_prev: TotpSetupState, formData: FormData
 
   const code = String(formData.get("code") ?? "").replace(/\s/g, "");
   const result = await confirmTotp(session.token, code);
-  if (result.ok) redirect("/account?saved=mfa-on#two-step");
+  // The recovery codes are shown now and never again, so no redirect yet.
+  if (result.ok) return { recoveryCodes: result.recoveryCodes };
 
   switch (result.reason) {
     case "signed-out":
@@ -144,5 +149,25 @@ export async function confirmTotpSetup(_prev: TotpSetupState, formData: FormData
       redirect("/account#two-step");
     default:
       return { ...shown, error: "Two-step sign-in could not be turned on right now. Please try again." };
+  }
+}
+
+/** Turns two-step sign-in off; needs the password and a code from the app (or a recovery code). */
+export async function disableTotp(formData: FormData) {
+  const session = await getSession();
+  if (!session) redirect("/sign-in?next=/account");
+
+  const result = await turnOffTotp(session.token, String(formData.get("password") ?? ""), String(formData.get("code") ?? "").trim());
+  if (result.ok) redirect("/account?saved=mfa-off#two-step");
+
+  switch (result.reason) {
+    case "signed-out":
+      redirect("/sign-in?next=/account");
+    case "wrong-password":
+      redirect("/account?error=mfa-off-password#two-step");
+    case "wrong-code":
+      redirect("/account?error=mfa-off-code#two-step");
+    default:
+      redirect("/account?error=mfa-off-failed#two-step");
   }
 }

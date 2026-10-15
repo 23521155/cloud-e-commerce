@@ -357,7 +357,9 @@ func TestTOTPAndChallenges(t *testing.T) {
 	if err := repo.SaveTOTPSecret(ctx, u.ID, []byte("sealed")); err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.EnableTOTP(ctx, u.ID, 100); err != nil {
+	_, code1, _ := newSecret()
+	_, code2, _ := newSecret()
+	if err := repo.EnableTOTP(ctx, u.ID, 100, [][]byte{code1, code2}); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := repo.FindByID(ctx, u.ID)
@@ -396,5 +398,42 @@ func TestTOTPAndChallenges(t *testing.T) {
 	}
 	if _, err := repo.CountMFAAttempt(ctx, c.ID); !errors.Is(err, ErrInvalidChallenge) {
 		t.Errorf("attempt on a used step: %v, want ErrInvalidChallenge", err)
+	}
+}
+
+func TestRecoveryCodesAndDisable(t *testing.T) {
+	repo := newTestRepo(t)
+	u := newUser(t, repo)
+	ctx := context.Background()
+
+	if _, err := repo.Create(ctx, u, testVerification(u)); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.SaveTOTPSecret(ctx, u.ID, []byte("sealed")); err != nil {
+		t.Fatal(err)
+	}
+
+	_, code1, _ := newSecret()
+	if err := repo.EnableTOTP(ctx, u.ID, 1, [][]byte{code1}); err != nil {
+		t.Fatal(err)
+	}
+	if ok, _ := repo.UseRecoveryCode(ctx, u.ID, code1); !ok {
+		t.Error("first use refused")
+	}
+	if ok, _ := repo.UseRecoveryCode(ctx, u.ID, code1); ok {
+		t.Error("second use accepted")
+	}
+
+	if err := repo.DisableTOTP(ctx, u.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := repo.FindByID(ctx, u.ID)
+	if got.TOTPEnabledAt != nil || got.TOTPSecretSealed != nil {
+		t.Errorf("after disabling: %+v", got)
+	}
+	var left int
+	repo.db.GetContext(ctx, &left, `SELECT COUNT(*) FROM recovery_codes WHERE user_id = @p1`, u.ID)
+	if left != 0 {
+		t.Errorf("%d recovery codes left after disabling", left)
 	}
 }

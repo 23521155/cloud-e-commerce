@@ -30,6 +30,7 @@ type fakeStore struct {
 	refresh []*RefreshToken
 
 	challenges []*MFAChallenge
+	recovery   map[string]bool // code hash -> used
 }
 
 func (f *fakeStore) CreateRefreshToken(ctx context.Context, t RefreshToken) error {
@@ -144,12 +145,33 @@ func (f *fakeStore) SaveTOTPSecret(ctx context.Context, userID string, sealed []
 	return nil
 }
 
-func (f *fakeStore) EnableTOTP(ctx context.Context, userID string, step int64) error {
+func (f *fakeStore) EnableTOTP(ctx context.Context, userID string, step int64, recoveryHashes [][]byte) error {
 	email, u, _ := f.byID(userID)
 	now := time.Now()
 	u.TOTPEnabledAt, u.TOTPLastStep = &now, &step
 	f.users[email] = u
+	f.recovery = map[string]bool{}
+	for _, h := range recoveryHashes {
+		f.recovery[string(h)] = false
+	}
 	return nil
+}
+
+func (f *fakeStore) DisableTOTP(ctx context.Context, userID string) error {
+	email, u, _ := f.byID(userID)
+	u.TOTPSecretSealed, u.TOTPEnabledAt, u.TOTPLastStep = nil, nil, nil
+	f.users[email] = u
+	f.recovery = nil
+	return nil
+}
+
+func (f *fakeStore) UseRecoveryCode(ctx context.Context, userID string, hash []byte) (bool, error) {
+	used, ok := f.recovery[string(hash)]
+	if !ok || used {
+		return false, nil
+	}
+	f.recovery[string(hash)] = true
+	return true, nil
 }
 
 func (f *fakeStore) UseTOTPStep(ctx context.Context, userID string, step int64) (bool, error) {

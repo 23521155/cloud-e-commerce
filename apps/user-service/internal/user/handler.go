@@ -37,7 +37,8 @@ type accounts interface {
 	RequestPasswordReset(ctx context.Context, email string) error
 	ResetPassword(ctx context.Context, token, password string) error
 	SetupTOTP(ctx context.Context, id string) (TOTPSetup, error)
-	ConfirmTOTP(ctx context.Context, id, code string) error
+	ConfirmTOTP(ctx context.Context, id, code string) ([]string, error)
+	DisableTOTP(ctx context.Context, id, password, code string) error
 	VerifyMFA(ctx context.Context, token, code string) (User, Tokens, error)
 }
 
@@ -66,6 +67,7 @@ func (h *Handler) Register(api *gin.RouterGroup) {
 	api.POST("/auth/reset-password", h.resetPassword)
 	api.POST("/me/mfa/totp/setup", h.setupTOTP)
 	api.POST("/me/mfa/totp/confirm", h.confirmTOTP)
+	api.POST("/me/mfa/totp/disable", h.disableTOTP)
 	api.POST("/auth/mfa/verify", h.verifyMFA)
 }
 
@@ -445,7 +447,39 @@ func (h *Handler) confirmTOTP(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.ConfirmTOTP(c.Request.Context(), id, req.Code); err != nil {
+	codes, err := h.service.ConfirmTOTP(c.Request.Context(), id, req.Code)
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+
+	// Shown this once: only their hashes are kept.
+	c.JSON(http.StatusOK, gin.H{"recoveryCodes": codes})
+}
+
+// disableRequest is the body of POST /me/mfa/totp/disable.
+type disableRequest struct {
+	Password string `json:"password"`
+	Code     string `json:"code"`
+}
+
+func (h *Handler) disableTOTP(c *gin.Context) {
+
+	id := c.GetHeader(userIDHeader)
+	if id == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "sign in required"})
+		return
+	}
+
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBodyBytes)
+
+	var req disableRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	if err := h.service.DisableTOTP(c.Request.Context(), id, req.Password, req.Code); err != nil {
 		h.fail(c, err)
 		return
 	}

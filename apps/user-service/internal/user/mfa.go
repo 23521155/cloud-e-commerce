@@ -2,9 +2,12 @@ package user
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/subtle"
+	"encoding/base32"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/pquerna/otp"
@@ -23,6 +26,9 @@ const (
 
 	// maxMFAAttempts is how many codes one sign-in may try.
 	maxMFAAttempts = 5
+
+	// recoveryCodeCount is how many recovery codes turning it on gives.
+	recoveryCodeCount = 10
 )
 
 var totpOpts = totp.ValidateOpts{Period: uint(totpPeriod.Seconds()), Digits: otp.DigitsSix, Algorithm: otp.AlgorithmSHA1}
@@ -78,8 +84,15 @@ type mfaStore interface {
 	// two-step sign-in is on already (ErrMFAAlreadyOn).
 	SaveTOTPSecret(ctx context.Context, userID string, sealed []byte) error
 	// EnableTOTP turns two-step sign-in on, with the step of the code that
-	// proved the setup.
-	EnableTOTP(ctx context.Context, userID string, step int64) error
+	// proved the setup and the hashes of new recovery codes, replacing any
+	// older ones, in one transaction.
+	EnableTOTP(ctx context.Context, userID string, step int64, recoveryHashes [][]byte) error
+	// DisableTOTP turns two-step sign-in off and forgets the secret and the
+	// recovery codes.
+	DisableTOTP(ctx context.Context, userID string) error
+	// UseRecoveryCode marks an unused recovery code of the account as used,
+	// and reports false when there is none with that hash.
+	UseRecoveryCode(ctx context.Context, userID string, hash []byte) (bool, error)
 	// UseTOTPStep records a code's step and reports false when that step,
 	// or a later one, was used already.
 	UseTOTPStep(ctx context.Context, userID string, step int64) (bool, error)
@@ -134,18 +147,80 @@ func (s *Service) SetupTOTP(ctx context.Context, id string) (TOTPSetup, error) {
 }
 
 // ConfirmTOTP turns two-step sign-in on once a code shows the app has the
-// secret.
-func (s *Service) ConfirmTOTP(ctx context.Context, id, code string) error {
+// secret, and returns recovery codes: the only time they are shown.
+func (s *Service) ConfirmTOTP(ctx context.Context, id, code string) ([]string, error) {
+
+	u, err := s.store.FindByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if u.TOTPEnabledAt != nil {
+		return nil, ErrMFAAlreadyOn
+	}
+	if u.TOTPSecretSealed == nil {
+		return nil, ErrMFANotSetUp
+	}
+
+	step, err := s.checkCode(u, code)
+	if err != nil {
+		return nil, err
+	}
+
+	codes := make([]string, recoveryCodeCount)
+	hashes := make([][]byte, recoveryCodeCount)
+	for i := range codes {
+		if codes[i], err = newRecoveryCode(); err != nil {
+			return nil, err
+		}
+		hashes[i] = hashToken(normalizeRecoveryCode(codes[i]))
+	}
+
+	if err := s.store.EnableTOTP(ctx, id, step, hashes); err != nil {
+		return nil, err
+	}
+	return codes, nil
+}
+
+// DisableTOTP turns two-step sign-in off. It asks for the password and a
+// code (or recovery code), so a device left signed in is not enough.
+func (s *Service) DisableTOTP(ctx context.Context, id, password, code string) error {
 
 	u, err := s.store.FindByID(ctx, id)
 	if err != nil {
 		return err
 	}
-	if u.TOTPEnabledAt != nil {
-		return ErrMFAAlreadyOn
-	}
-	if u.TOTPSecretSealed == nil {
+	if u.TOTPEnabledAt == nil {
 		return ErrMFANotSetUp
+	}
+
+	ok, err := verifyPassword(password, u.PasswordHash)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return ErrWrongPassword
+	}
+
+	if err := s.secondFactor(ctx, u, code); err != nil {
+		return err
+	}
+
+	return s.store.DisableTOTP(ctx, id)
+}
+
+// secondFactor accepts an authenticator code once, or an unused recovery
+// code.
+func (s *Service) secondFactor(ctx context.Context, u User, code string) error {
+
+	if isRecoveryCode(code) {
+		used, err := s.store.UseRecoveryCode(ctx, u.ID, hashToken(normalizeRecoveryCode(code)))
+		if err != nil {
+			return err
+		}
+		if !used {
+			return ErrWrongCode
+		}
+		return nil
 	}
 
 	step, err := s.checkCode(u, code)
@@ -153,7 +228,38 @@ func (s *Service) ConfirmTOTP(ctx context.Context, id, code string) error {
 		return err
 	}
 
-	return s.store.EnableTOTP(ctx, id, step)
+	fresh, err := s.store.UseTOTPStep(ctx, u.ID, step)
+	if err != nil {
+		return err
+	}
+	if !fresh {
+		// The code was right but has been used: it may have been seen.
+		return ErrWrongCode
+	}
+	return nil
+}
+
+// Recovery codes are 12 base32 letters shown as xxxx-xxxx-xxxx: 60 random
+// bits each, easy to copy by hand.
+var recoveryEncoding = base32.StdEncoding.WithPadding(base32.NoPadding)
+
+func newRecoveryCode() (string, error) {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	c := strings.ToLower(recoveryEncoding.EncodeToString(b))[:12]
+	return c[:4] + "-" + c[4:8] + "-" + c[8:], nil
+}
+
+// normalizeRecoveryCode ignores case, spaces and dashes, as typed.
+func normalizeRecoveryCode(code string) string {
+	return strings.ToLower(strings.NewReplacer("-", "", " ", "").Replace(code))
+}
+
+// isRecoveryCode tells a recovery code (letters) from an app code (digits).
+func isRecoveryCode(code string) bool {
+	return len(normalizeRecoveryCode(code)) == 12
 }
 
 // challenge opens the code step of a sign-in for u on device.
@@ -177,8 +283,8 @@ func (s *Service) challenge(ctx context.Context, u User, device string) error {
 	return &MFARequiredError{Token: raw, ExpiresAt: expires}
 }
 
-// VerifyMFA finishes a sign-in with an authenticator code and starts the
-// session on the device the password was given on.
+// VerifyMFA finishes a sign-in with an authenticator code, or a recovery
+// code, and starts the session on the device the password was given on.
 func (s *Service) VerifyMFA(ctx context.Context, token, code string) (User, Tokens, error) {
 
 	c, err := s.store.FindMFAChallenge(ctx, hashToken(token))
@@ -210,18 +316,8 @@ func (s *Service) VerifyMFA(ctx context.Context, token, code string) (User, Toke
 		return User{}, Tokens{}, err
 	}
 
-	step, err := s.checkCode(u, code)
-	if err != nil {
+	if err := s.secondFactor(ctx, u, code); err != nil {
 		return User{}, Tokens{}, err
-	}
-
-	fresh, err := s.store.UseTOTPStep(ctx, u.ID, step)
-	if err != nil {
-		return User{}, Tokens{}, err
-	}
-	if !fresh {
-		// The code was right but has been used: it may have been seen.
-		return User{}, Tokens{}, ErrWrongCode
 	}
 
 	if ok, err := s.store.UseMFAChallenge(ctx, c.ID); err != nil || !ok {

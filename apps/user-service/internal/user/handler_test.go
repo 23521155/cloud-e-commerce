@@ -80,8 +80,13 @@ func (f *fakeAccounts) SetupTOTP(ctx context.Context, id string) (TOTPSetup, err
 	return TOTPSetup{Secret: "JBSWY3DPEHPK3PXP", URL: "otpauth://totp/Marginalleya:reader@example.com?secret=JBSWY3DPEHPK3PXP"}, f.err
 }
 
-func (f *fakeAccounts) ConfirmTOTP(ctx context.Context, id, code string) error {
+func (f *fakeAccounts) ConfirmTOTP(ctx context.Context, id, code string) ([]string, error) {
 	f.gotID, f.gotPass = id, code
+	return []string{"abcd-efgh-ijkl"}, f.err
+}
+
+func (f *fakeAccounts) DisableTOTP(ctx context.Context, id, password, code string) error {
+	f.gotID, f.gotPass, f.gotNewPass = id, password, code
 	return f.err
 }
 
@@ -503,8 +508,19 @@ func TestTOTPHandlers(t *testing.T) {
 
 	svc := &fakeAccounts{}
 	w = send(t, svc, http.MethodPost, "/me/mfa/totp/confirm", `{"code":"123456"}`, signedIn)
-	if w.Code != http.StatusNoContent || svc.gotPass != "123456" {
-		t.Errorf("confirm: %d, code %q", w.Code, svc.gotPass)
+	if w.Code != http.StatusOK || svc.gotPass != "123456" || !strings.Contains(w.Body.String(), `"recoveryCodes":["abcd-efgh-ijkl"]`) {
+		t.Errorf("confirm: %d %s, code %q", w.Code, w.Body, svc.gotPass)
+	}
+
+	svc = &fakeAccounts{}
+	w = send(t, svc, http.MethodPost, "/me/mfa/totp/disable", `{"password":"pw","code":"654321"}`, signedIn)
+	if w.Code != http.StatusNoContent || svc.gotPass != "pw" || svc.gotNewPass != "654321" {
+		t.Errorf("disable: %d, got %q %q", w.Code, svc.gotPass, svc.gotNewPass)
+	}
+
+	w = send(t, &fakeAccounts{err: ErrWrongPassword}, http.MethodPost, "/me/mfa/totp/disable", `{"password":"x","code":"1"}`, signedIn)
+	if w.Code != http.StatusForbidden {
+		t.Errorf("disable with a wrong password: %d, want 403", w.Code)
 	}
 
 	w = send(t, &fakeAccounts{err: ErrWrongCode}, http.MethodPost, "/me/mfa/totp/confirm", `{"code":"000000"}`, signedIn)

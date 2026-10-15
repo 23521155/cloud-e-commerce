@@ -26,13 +26,70 @@ WHERE id = @id AND totp_enabled_at IS NULL`,
 	return nil
 }
 
-// EnableTOTP turns two-step sign-in on.
-func (r *Repository) EnableTOTP(ctx context.Context, userID string, step int64) error {
-	_, err := r.db.ExecContext(ctx, `
+// EnableTOTP turns two-step sign-in on with new recovery codes.
+func (r *Repository) EnableTOTP(ctx context.Context, userID string, step int64, recoveryHashes [][]byte) error {
+
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `
 UPDATE users SET totp_enabled_at = SYSUTCDATETIME(), totp_last_step = @step, updated_at = SYSUTCDATETIME()
 WHERE id = @id AND totp_secret_enc IS NOT NULL`,
-		sql.Named("id", userID), sql.Named("step", step))
-	return err
+		sql.Named("id", userID), sql.Named("step", step)); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM recovery_codes WHERE user_id = @id`, sql.Named("id", userID)); err != nil {
+		return err
+	}
+	for _, h := range recoveryHashes {
+		if _, err := tx.ExecContext(ctx, `
+INSERT INTO recovery_codes (user_id, code_hash) VALUES (@id, @hash)`,
+			sql.Named("id", userID), sql.Named("hash", h)); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+// DisableTOTP turns two-step sign-in off and forgets its secret and codes.
+func (r *Repository) DisableTOTP(ctx context.Context, userID string) error {
+
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `
+UPDATE users SET totp_secret_enc = NULL, totp_enabled_at = NULL, totp_last_step = NULL, updated_at = SYSUTCDATETIME()
+WHERE id = @id`, sql.Named("id", userID)); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM recovery_codes WHERE user_id = @id`, sql.Named("id", userID)); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+// UseRecoveryCode marks an unused recovery code as used.
+func (r *Repository) UseRecoveryCode(ctx context.Context, userID string, hash []byte) (bool, error) {
+
+	res, err := r.db.ExecContext(ctx, `
+UPDATE recovery_codes SET used_at = SYSUTCDATETIME()
+WHERE user_id = @id AND code_hash = @hash AND used_at IS NULL`,
+		sql.Named("id", userID), sql.Named("hash", hash))
+	if err != nil {
+		return false, err
+	}
+
+	n, err := res.RowsAffected()
+	return n == 1, err
 }
 
 // UseTOTPStep records step as used, unless it or a later one was.

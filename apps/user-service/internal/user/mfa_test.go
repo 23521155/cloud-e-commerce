@@ -46,11 +46,16 @@ func withMFA(t *testing.T) (*Service, *fakeStore, User, string) {
 		t.Errorf("stored %q, want the sealed secret", stored)
 	}
 
-	if err := svc.ConfirmTOTP(ctx, u.ID, code(t, setup.Secret, start)); err != nil {
+	codes, err := svc.ConfirmTOTP(ctx, u.ID, code(t, setup.Secret, start))
+	if err != nil {
 		t.Fatal(err)
 	}
+	recoveryCodes = codes
 	return svc, store, u, setup.Secret
 }
+
+// recoveryCodes are those of the last withMFA.
+var recoveryCodes []string
 
 func code(t *testing.T, secret string, at time.Time) string {
 	t.Helper()
@@ -80,13 +85,13 @@ func TestConfirmTOTPNeedsTheRightCode(t *testing.T) {
 	svc.box = fakeBox{}
 	ctx := context.Background()
 
-	if err := svc.ConfirmTOTP(ctx, u.ID, "123456"); !errors.Is(err, ErrMFANotSetUp) {
+	if _, err := svc.ConfirmTOTP(ctx, u.ID, "123456"); !errors.Is(err, ErrMFANotSetUp) {
 		t.Errorf("before setup: %v, want ErrMFANotSetUp", err)
 	}
 	if _, err := svc.SetupTOTP(ctx, u.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.ConfirmTOTP(ctx, u.ID, "000000"); !errors.Is(err, ErrWrongCode) {
+	if _, err := svc.ConfirmTOTP(ctx, u.ID, "000000"); !errors.Is(err, ErrWrongCode) {
 		t.Errorf("wrong code: %v, want ErrWrongCode", err)
 	}
 	if store.users["reader@example.com"].TOTPEnabledAt != nil {
@@ -189,5 +194,78 @@ func TestMFAUnavailableWithoutAKey(t *testing.T) {
 
 	if _, err := svc.SetupTOTP(context.Background(), u.ID); !errors.Is(err, ErrMFAUnavailable) {
 		t.Errorf("setup without a key: %v, want ErrMFAUnavailable", err)
+	}
+}
+
+func TestTurningItOnGivesTenRecoveryCodes(t *testing.T) {
+
+	_, store, _, _ := withMFA(t)
+
+	if len(recoveryCodes) != recoveryCodeCount || len(store.recovery) != recoveryCodeCount {
+		t.Fatalf("%d codes shown, %d stored; want %d", len(recoveryCodes), len(store.recovery), recoveryCodeCount)
+	}
+	seen := map[string]bool{}
+	for _, c := range recoveryCodes {
+		if len(c) != 14 || c[4] != '-' || c[9] != '-' || seen[c] {
+			t.Errorf("code %q: want unique xxxx-xxxx-xxxx", c)
+		}
+		seen[c] = true
+		if _, stored := store.recovery[c]; stored {
+			t.Error("a recovery code is stored as is")
+		}
+	}
+}
+
+func TestSignInWithARecoveryCodeOnce(t *testing.T) {
+
+	svc, _, _, _ := withMFA(t)
+	ctx := context.Background()
+
+	signIn := func(code string) error {
+		_, _, err := svc.Login(ctx, "reader@example.com", "right password", "")
+		var mfa *MFARequiredError
+		if !errors.As(err, &mfa) {
+			t.Fatalf("Login: %v", err)
+		}
+		_, _, err = svc.VerifyMFA(ctx, mfa.Token, code)
+		return err
+	}
+
+	// Typed in capitals with spaces still counts.
+	typed := strings.ToUpper(strings.ReplaceAll(recoveryCodes[3], "-", " "))
+	if err := signIn(typed); err != nil {
+		t.Fatalf("recovery code refused: %v", err)
+	}
+	if err := signIn(recoveryCodes[3]); !errors.Is(err, ErrWrongCode) {
+		t.Errorf("same recovery code again: %v, want ErrWrongCode", err)
+	}
+	if err := signIn("aaaa-bbbb-cccc"); !errors.Is(err, ErrWrongCode) {
+		t.Errorf("made-up recovery code: %v, want ErrWrongCode", err)
+	}
+}
+
+func TestDisableTOTP(t *testing.T) {
+
+	svc, store, u, secret := withMFA(t)
+	ctx := context.Background()
+	next := code(t, secret, svc.now().Add(totpPeriod))
+
+	if err := svc.DisableTOTP(ctx, u.ID, "wrong password", next); !errors.Is(err, ErrWrongPassword) {
+		t.Errorf("wrong password: %v, want ErrWrongPassword", err)
+	}
+	if err := svc.DisableTOTP(ctx, u.ID, "right password", "000000"); !errors.Is(err, ErrWrongCode) {
+		t.Errorf("wrong code: %v, want ErrWrongCode", err)
+	}
+	svc.now = func() time.Time { return time.Date(2026, 10, 16, 9, 0, 30, 0, time.UTC) }
+	if err := svc.DisableTOTP(ctx, u.ID, "right password", next); err != nil {
+		t.Fatal(err)
+	}
+
+	got := store.users["reader@example.com"]
+	if got.TOTPEnabledAt != nil || got.TOTPSecretSealed != nil || store.recovery != nil {
+		t.Errorf("after turning off: %+v, recovery %v", got, store.recovery)
+	}
+	if _, _, err := svc.Login(ctx, "reader@example.com", "right password", ""); err != nil {
+		t.Errorf("sign-in after turning off: %v, want no code step", err)
 	}
 }

@@ -137,16 +137,8 @@ export function CodeForm({ next }: { next?: string }) {
     <form action={formAction} className="auth__form">
       <FormError error={state.error} />
       {next && <input type="hidden" name="next" value={next} />}
-      <TextField
-        label="Code from your authenticator app"
-        name="code"
-        inputMode="numeric"
-        autoComplete="one-time-code"
-        pattern="\s*\d{3}\s*\d{3}\s*"
-        maxLength={7}
-        placeholder="123456"
-        autoFocus
-      />
+      <TextField label="Code from your authenticator app" name="code" autoComplete="one-time-code" maxLength={16} placeholder="123456" autoFocus />
+      <p className="co__hint m-0">Lost your phone? Type one of your recovery codes instead.</p>
       <SubmitButton pending="Checking…">Sign in</SubmitButton>
     </form>
   );

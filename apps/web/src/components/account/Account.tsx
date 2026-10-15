@@ -1,6 +1,6 @@
 import { PasswordField, SubmitButton } from "@/components/auth/AuthClient";
 import { TwoStepSetup } from "@/components/account/TwoStep";
-import { changePassword, resendVerification, updateProfile } from "@/lib/account-actions";
+import { changePassword, disableTotp, resendVerification, updateProfile } from "@/lib/account-actions";
 
 export type Profile = {
   name: string;
@@ -12,7 +12,7 @@ export type Profile = {
   country: string;
 };
 
-export type SavedNotice = "profile" | "password" | "verify-sent" | "mfa-on";
+export type SavedNotice = "profile" | "password" | "verify-sent" | "mfa-on" | "mfa-off";
 
 /** Why the ledger page or the password slip was not saved; nothing changed. */
 export type AccountError = keyof typeof ACCOUNT_ERROR;
@@ -26,11 +26,14 @@ const ACCOUNT_ERROR = {
   "password-failed": "Not changed: the shop could not be reached. Please try again in a moment.",
   "verify-too-soon": "A link went out a moment ago. Check your inbox, or ask again in a minute.",
   "verify-failed": "The link could not be sent right now. Please try again in a moment.",
+  "mfa-off-password": "Still on: the password is not right.",
+  "mfa-off-code": "Still on: that code is not right, or was used already.",
+  "mfa-off-failed": "Still on: the shop could not be reached. Please try again in a moment.",
 } as const;
 
 export const isAccountError = (value: unknown): value is AccountError => typeof value === "string" && value in ACCOUNT_ERROR;
 
-function ErrorNotice({ error, prefix }: { error?: AccountError; prefix: "profile" | "password" | "verify" }) {
+function ErrorNotice({ error, prefix }: { error?: AccountError; prefix: "profile" | "password" | "verify" | "mfa" }) {
   if (!error?.startsWith(prefix)) return null;
   return (
     <p className="acc-notice m-0" role="alert">
@@ -155,10 +158,22 @@ export function Account({
           Another slip: <em>two-step sign-in</em>
         </h2>
         <Notice show={saved === "mfa-on"}>Two-step sign-in is on. Signing in now also asks for a code from your app.</Notice>
+        <Notice show={saved === "mfa-off"}>Two-step sign-in is off. Signing in asks for your password only.</Notice>
+        <ErrorNotice error={error} prefix="mfa" />
         {twoStepSince ? (
-          <p className="m-0">
-            On since {sinceFormat.format(new Date(twoStepSince))}. Signing in asks for a code from your authenticator app as well as your password.
-          </p>
+          <>
+            <p className="m-0 mb-4">
+              On since {sinceFormat.format(new Date(twoStepSince))}. Signing in asks for a code from your authenticator app as well as your password.
+            </p>
+            <form action={disableTotp} className="ledger__slip-form">
+              <PasswordField label="Password" name="password" autoComplete="current-password" />
+              <label className="auth__field">
+                <span className="co__label small-upper">Code or recovery code</span>
+                <input name="code" className="co__input" autoComplete="one-time-code" maxLength={16} required />
+              </label>
+              <SubmitButton pending="Turning off…">Turn two-step sign-in off</SubmitButton>
+            </form>
+          </>
         ) : (
           <TwoStepSetup />
         )}

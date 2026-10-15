@@ -2335,6 +2335,15 @@
     display: grid;
     gap: 14px;
   }
+  .two-step__codes {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+    gap: 6px 18px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-family: ui-monospace, monospace;
+  }
   .two-step__secret {
     font-family: ui-monospace, monospace;
     letter-spacing: 0.08em;

@@ -1,6 +1,7 @@
 "use client";
 
 /* eslint-disable @next/next/no-img-element -- the QR code is a data: URL made per request */
+import Link from "next/link";
 import { useActionState } from "react";
 import { SubmitButton } from "@/components/auth/AuthClient";
 import { confirmTotpSetup, startTotpSetup, type TotpSetupState } from "@/lib/account-actions";
@@ -9,6 +10,27 @@ import { confirmTotpSetup, startTotpSetup, type TotpSetupState } from "@/lib/acc
 export function TwoStepSetup() {
   const [started, start] = useActionState<TotpSetupState>(startTotpSetup, {});
   const [confirmed, confirm] = useActionState<TotpSetupState, FormData>(confirmTotpSetup, {});
+
+  if (confirmed.recoveryCodes) {
+    return (
+      <div className="two-step__steps">
+        <p className="m-0">
+          Two-step sign-in is on. If you lose your phone, each of these codes signs you in once instead of the app. Keep them somewhere safe: they
+          are not shown again.
+        </p>
+        <ul className="two-step__codes">
+          {confirmed.recoveryCodes.map((c) => (
+            <li key={c}>
+              <code>{c}</code>
+            </li>
+          ))}
+        </ul>
+        <Link href="/account?saved=mfa-on#two-step" className="ledger__to-slip under-hover">
+          I have kept them
+        </Link>
+      </div>
+    );
+  }
 
   // The confirm form keeps the QR code in its own state once a code was tried.
   const setup = confirmed.qr ? confirmed : started;

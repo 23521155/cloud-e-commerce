@@ -382,7 +382,10 @@ export async function setupTotp(accessToken: string): Promise<TotpSetupResult> {
   return { ok: false, reason: "failed" };
 }
 
-export type TotpConfirmResult = { ok: true } | { ok: false; reason: "wrong-code" | "conflict" | "signed-out" | "failed" };
+export type TotpConfirmResult =
+  /** Recovery codes are shown this once. */
+  | { ok: true; recoveryCodes: string[] }
+  | { ok: false; reason: "wrong-code" | "conflict" | "signed-out" | "failed" };
 
 /** POST /api/users/me/mfa/totp/confirm: turns two-step sign-in on with a first code. */
 export async function confirmTotp(accessToken: string, code: string): Promise<TotpConfirmResult> {
@@ -398,9 +401,33 @@ export async function confirmTotp(accessToken: string, code: string): Promise<To
     return { ok: false, reason: "failed" };
   }
 
-  if (res.status === 204) return { ok: true };
+  if (res.ok) return { ok: true, ...((await res.json()) as { recoveryCodes: string[] }) };
   if (res.status === 400) return { ok: false, reason: "wrong-code" };
   if (res.status === 409) return { ok: false, reason: "conflict" };
+  if (res.status === 401) return { ok: false, reason: "signed-out" };
+
+  return { ok: false, reason: "failed" };
+}
+
+export type TotpDisableResult = { ok: true } | { ok: false; reason: "wrong-password" | "wrong-code" | "signed-out" | "failed" };
+
+/** POST /api/users/me/mfa/totp/disable: needs the password and a code (or recovery code). */
+export async function disableTotp(accessToken: string, password: string, code: string): Promise<TotpDisableResult> {
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/me/mfa/totp/disable`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}`, ...(await forwardedFor()) },
+      body: JSON.stringify({ password, code }),
+      cache: "no-store",
+    });
+  } catch {
+    return { ok: false, reason: "failed" };
+  }
+
+  if (res.status === 204) return { ok: true };
+  if (res.status === 403) return { ok: false, reason: "wrong-password" };
+  if (res.status === 400) return { ok: false, reason: "wrong-code" };
   if (res.status === 401) return { ok: false, reason: "signed-out" };
 
   return { ok: false, reason: "failed" };

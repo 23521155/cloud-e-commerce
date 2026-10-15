@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 
 export default async function AccountPage({ searchParams }: PageProps<"/account">) {
   const sp = await searchParams;
-  const saved = (["profile", "password", "verify-sent", "mfa-on"] as const).find((s) => s === sp.saved) as SavedNotice | undefined;
+  const saved = (["profile", "password", "verify-sent", "mfa-on", "mfa-off"] as const).find((s) => s === sp.saved) as SavedNotice | undefined;
   const error = isAccountError(sp.error) ? sp.error : undefined;
 
   const session = await getSession();
