@@ -47,6 +47,13 @@ param jwtSecret string
 @secure()
 param mfaEncryptionKey string
 
+@description('Google OAuth client (Google Cloud console, project marginalleya-dev). Empty: Google sign-in stays off.')
+@secure()
+param googleClientId string = ''
+
+@secure()
+param googleClientSecret string = ''
+
 module network 'modules/network.bicep' = {
   name: 'network'
   params: {
@@ -138,6 +145,8 @@ module containerApps 'modules/containerapps.bicep' = if(deployApps) {
     internalToken: internalToken
     jwtSecret: jwtSecret
     mfaEncryptionKey: mfaEncryptionKey
+    googleClientId: googleClientId
+    googleClientSecret: googleClientSecret
     imageTag: imageTag
     redisName: redis.outputs.name
     storageAccountName: storage.outputs.name
