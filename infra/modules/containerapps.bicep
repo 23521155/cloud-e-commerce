@@ -34,6 +34,13 @@ param jwtSecret string
 @secure()
 param mfaEncryptionKey string
 
+@description('Google OAuth client of the user service. Empty: Google sign-in is off.')
+@secure()
+param googleClientId string = ''
+
+@secure()
+param googleClientSecret string = ''
+
 @description('Storage account whose queues carry emails and account events.')
 param storageAccountName string
 
@@ -363,6 +370,9 @@ resource order 'Microsoft.App/containerApps@2024-03-01' = {
   }
 }
 
+// A Container App secret cannot be empty, so Google's are only there when both values are given.
+var googleEnabled = !empty(googleClientId) && !empty(googleClientSecret)
+
 resource user 'Microsoft.App/containerApps@2024-03-01' = {
   name: 'user-service'
   location: location
@@ -375,13 +385,16 @@ resource user 'Microsoft.App/containerApps@2024-03-01' = {
     workloadProfileName: 'Consumption'
     configuration: {
       registries: registries
-      secrets: [
+      secrets: concat([
         #disable-next-line use-secure-value-for-secure-inputs // built from the secure sqlAdminPassword
         { name: 'database-url', value: usersDbUrl }
         { name: 'jwt-secret', value: jwtSecret }
         { name: 'mfa-encryption-key', value: mfaEncryptionKey }
         { name: 'storage-connection-string', value: storageConnectionString }
-      ]
+      ], googleEnabled ? [
+        { name: 'google-client-id', value: googleClientId }
+        { name: 'google-client-secret', value: googleClientSecret }
+      ] : [])
       ingress: {
         external: false // internal only: the gateway calls it and sets the trusted X-User-* headers
         targetPort: 8085
@@ -394,7 +407,7 @@ resource user 'Microsoft.App/containerApps@2024-03-01' = {
           name: 'user-service'
           image: '${acrLoginServer}/user-service:${imageTag}'
           resources: goResources
-          env: [
+          env: concat([
             { name: 'APP_NAME', value: 'user-service' }
             { name: 'PORT', value: '8085' }
             { name: 'GIN_MODE', value: 'release' }
@@ -407,9 +420,12 @@ resource user 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'MFA_ENCRYPTION_KEY', secretRef: 'mfa-encryption-key' }
             // The outbox relay writes the email-outbox and user-email-verified queues here.
             { name: 'STORAGE_CONNECTION_STRING', secretRef: 'storage-connection-string' }
-            // For the links in emails.
+            // For the links in emails and Google's callback (WEB_URL + /auth/google/callback).
             { name: 'WEB_URL', value: webUrl }
-          ]
+          ], googleEnabled ? [
+            { name: 'GOOGLE_CLIENT_ID', secretRef: 'google-client-id' }
+            { name: 'GOOGLE_CLIENT_SECRET', secretRef: 'google-client-secret' }
+          ] : [])
         }
       ]
       scale: scale
