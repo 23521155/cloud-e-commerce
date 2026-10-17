@@ -94,6 +94,9 @@ param imageTag string = 'v1'
 @description('Replicas each app keeps when idle. 0 = scale to zero; set 1 while measuring to avoid cold starts.')
 param minReplicas int = 0
 
+@description('The shop\'s own domain (e.g. marginalleya.me), served with www. by the web app with free managed certificates. Empty: only the *.azurecontainerapps.io address. See containerapps.bicep for the DNS records it needs first.')
+param customDomain string = ''
+
 module redis 'modules/redis.bicep' = {
   name: 'redis'
   params: {
@@ -138,6 +141,7 @@ module containerApps 'modules/containerapps.bicep' = if(deployApps) {
     imageTag: imageTag
     redisName: redis.outputs.name
     storageAccountName: storage.outputs.name
+    customDomain: customDomain
   }
 }
 
