@@ -14,3 +14,20 @@ export async function forwardedFor(): Promise<Record<string, string>> {
     const value = (await headers()).get("x-forwarded-for");
     return value ? { "X-Forwarded-For": value } : {};    
 }
+/**
+ * Who is browsing, for calls that start or renew a session: the visitor's IP as above, and their
+ * User-Agent, from which the gateway names the device each session is kept for. Takes the request
+ * headers, so Proxy (which has the request, not next/headers) can use it too.
+ */
+export function visitorHeadersFrom(request: Headers): Record<string, string> {
+  const out: Record<string, string> = {};
+  const forwarded = request.get("x-forwarded-for");
+  const agent = request.get("user-agent");
+  if (forwarded) out["X-Forwarded-For"] = forwarded;
+  if (agent) out["User-Agent"] = agent;
+  return out;
+}
+
+export async function visitorHeaders(): Promise<Record<string, string>> {
+  return visitorHeadersFrom(await headers());
+}

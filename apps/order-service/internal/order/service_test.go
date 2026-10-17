@@ -3,6 +3,7 @@ package order
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -147,6 +148,28 @@ func (f *fakeStore) Insert(ctx context.Context, key string, o *Order) error {
 	return nil
 }
 
+func (f *fakeStore) LinkGuestOrders(ctx context.Context, userID, email string) (int64, error) {
+	var n int64
+	for _, o := range f.inserted {
+		if o.UserID == nil && strings.EqualFold(o.Email, email) {
+			id := userID
+			o.UserID = &id
+			n++
+		}
+	}
+	return n, nil
+}
+
+func (f *fakeStore) ListByUser(ctx context.Context, userID string, limit int) ([]Order, error) {
+	var mine []Order
+	for _, o := range f.inserted {
+		if o.UserID != nil && *o.UserID == userID {
+			mine = append(mine, *o)
+		}
+	}
+	return mine, nil
+}
+
 func (f *fakeStore) Cancel(ctx context.Context, id int64, reason string) error {
 	f.cancelled[id] = reason
 	return f.cancelErr
@@ -285,6 +308,29 @@ const testHold = 15 * time.Minute
 
 func newTestService(store Store, catalog *fakeCatalog) *Service {
 	return NewService(store, catalog, &fakePayments{}, testHold, zap.NewNop())
+}
+
+func TestCreateSignedInBelongsToTheCustomer(t *testing.T) {
+
+	store := newFakeStore()
+	svc := newTestService(store, &fakeCatalog{books: twoBooks()})
+
+	in := validInput()
+	user := "01a14046-945e-79f4-9de0-dcc903fd7cea"
+	in.UserID = &user
+
+	got, _, err := svc.Create(context.Background(), in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.UserID == nil || *got.UserID != user || store.inserted[0].UserID == nil || *store.inserted[0].UserID != user {
+		t.Errorf("order user = %v, stored %v; want %s", got.UserID, store.inserted[0].UserID, user)
+	}
+
+	mine, err := svc.ListMine(context.Background(), user)
+	if err != nil || len(mine) != 1 || mine[0].Code != got.Code {
+		t.Errorf("ListMine = %+v, %v; want the order", mine, err)
+	}
 }
 
 func TestCreateCOD(t *testing.T) {
@@ -533,5 +579,40 @@ func twoBooks() []catalogclient.Book {
 	return []catalogclient.Book{
 		{ID: 1, Slug: "nha-gia-kim", Title: "Nhà giả kim", PriceVND: 120000},
 		{ID: 2, Slug: "dac-nhan-tam", Title: "Đắc nhân tâm", PriceVND: 80000},
+	}
+}
+
+func TestLinkGuestOrdersOnlyTakesGuestOrdersWithTheAddress(t *testing.T) {
+
+	store := newFakeStore()
+	svc := newTestService(store, &fakeCatalog{books: twoBooks()})
+	ctx := context.Background()
+
+	place := func(email string, user *string) {
+		t.Helper()
+		in := validInput()
+		in.Key = fmt.Sprintf("3f9c1a52-7b0e-4d4a-9c1e-8a2b5d6f7e%02d", len(store.inserted))
+		in.Email, in.UserID = email, user
+		if _, _, err := svc.Create(ctx, in); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	other := "someone-else"
+	place("Reader@Example.com", nil)    // a guest order with the address, typed differently
+	place("reader@example.com", &other) // already someone's
+	place("other@example.com", nil)     // another guest
+
+	n, err := svc.LinkGuestOrders(ctx, "u1", "reader@example.com")
+	if err != nil || n != 1 {
+		t.Fatalf("linked %d, %v; want 1", n, err)
+	}
+	if mine, _ := svc.ListMine(ctx, "u1"); len(mine) != 1 || mine[0].Email != "Reader@Example.com" {
+		t.Errorf("u1 has %+v", mine)
+	}
+
+	// The event comes twice: nothing more is linked.
+	if n, _ := svc.LinkGuestOrders(ctx, "u1", "reader@example.com"); n != 0 {
+		t.Errorf("second call linked %d, want 0", n)
 	}
 }

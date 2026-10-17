@@ -9,6 +9,8 @@ on:
       - 'apps/api-gateway/**'
       - 'apps/catalog-service/**'
       - 'apps/order-service/**'
+      - 'apps/user-service/**'
+      - 'apps/functions/**'
       - 'apps/web/**'
       - 'proto/**'
       - 'infra/**'
@@ -35,7 +37,7 @@ permissions:
 
 env:
   PREFIX: marginalleya
-  SERVICES: 'api-gateway catalog-service order-service web'
+  SERVICES: 'api-gateway catalog-service order-service user-service web'
 
 jobs:
   plan:
@@ -103,8 +105,9 @@ jobs:
         run: az group create -n "${{ matrix.rg }}" -l "${{ matrix.location }}" -o none
 
       # Phase 1 creates the registry, SQL, Redis, monitoring and network, so images have somewhere to go.
+      # It also runs when infra/ changed, so a new database exists before the migrations below.
       - name: Provision base infrastructure
-        if: steps.state.outputs.apps_exist != 'true'
+        if: steps.state.outputs.apps_exist != 'true' || steps.state.outputs.run_bicep == 'true'
         run: |
           az deployment group create -g "${{ matrix.rg }}" -n "base-${{ github.run_id }}" \
             -f infra/main.bicep \
@@ -112,6 +115,7 @@ jobs:
                sqlAdminPassword='${{ secrets.SQL_ADMIN_PASSWORD }}' \
                internalToken='${{ secrets.INTERNAL_TOKEN }}' \
                jwtSecret='${{ secrets.JWT_SECRET }}' \
+               mfaEncryptionKey='${{ secrets.MFA_ENCRYPTION_KEY }}' \
             -o none
 
       # The OIDC assertion lives about 5 minutes and base provisioning (Redis) takes longer,
@@ -166,7 +170,7 @@ jobs:
           SQL_PASSWORD: ${{ secrets.SQL_ADMIN_PASSWORD }}
           SQL_FQDN: ${{ steps.sql.outputs.fqdn }}
         run: |
-          for db in catalog:catalog-service orders:order-service; do
+          for db in catalog:catalog-service orders:order-service users:user-service; do
             name=${db%%:*}; svc=${db##*:}
             for attempt in 1 2 3 4 5 6; do
               docker run --rm -v "$PWD/apps/$svc/migrations:/migrations:ro" migrate/migrate:v4.20.1 \
@@ -202,6 +206,7 @@ jobs:
                sqlAdminPassword='${{ secrets.SQL_ADMIN_PASSWORD }}' \
                internalToken='${{ secrets.INTERNAL_TOKEN }}' \
                jwtSecret='${{ secrets.JWT_SECRET }}' \
+               mfaEncryptionKey='${{ secrets.MFA_ENCRYPTION_KEY }}' \
             -o none
 
       # Apps already exist and Bicep was skipped: only move each app to the new image (new revision).
@@ -213,6 +218,36 @@ jobs:
               --image "${{ steps.acr.outputs.name }}.azurecr.io/$s:$TAG" -o none
           done
 
+      # The sendEmail Function runs on the Flex Consumption plan, which takes a zip package rather
+      # than an image: the compiled code, host.json and the production node_modules.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/functions/package-lock.json
+
+      - name: Package the Function
+        working-directory: apps/functions
+        run: |
+          npm ci
+          npm run build
+          npm prune --omit=dev
+          zip -qr "$RUNNER_TEMP/functions.zip" host.json package.json dist node_modules
+
+      # Bicep and the image pushes can outlast the OIDC assertion; sign in again first.
+      - name: Re-login to Azure before the Function deploy
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy the Function
+        run: |
+          app=$(az functionapp list -g "${{ matrix.rg }}" --query "[0].name" -o tsv)
+          az functionapp deployment source config-zip -g "${{ matrix.rg }}" -n "$app" --src "$RUNNER_TEMP/functions.zip" -o none
+          echo "function: $app" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Smoke test
         shell: bash
         run: |
@@ -220,6 +255,8 @@ jobs:
           web=$(az containerapp show -g "${{ matrix.rg }}" -n web --query properties.configuration.ingress.fqdn -o tsv)
           # Apps may be scaled to zero, so allow for a cold start.
           curl --fail --retry 10 --retry-delay 10 --retry-all-errors -sS "https://$gw/health"
+          # Through the gateway to user-service, which also checks its database.
+          curl --fail --retry 10 --retry-delay 10 --retry-all-errors -sS "https://$gw/api/users/health"
           curl --fail --retry 10 --retry-delay 10 --retry-all-errors -sS -o /dev/null "https://$web/"
           echo "web:     https://$web" >> "$GITHUB_STEP_SUMMARY"
           echo "gateway: https://$gw" >> "$GITHUB_STEP_SUMMARY"

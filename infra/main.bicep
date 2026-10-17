@@ -43,6 +43,10 @@ param internalToken string
 @secure()
 param jwtSecret string
 
+@description('Encrypts the TOTP secrets of two-step sign-in: base64 of 32 random bytes.')
+@secure()
+param mfaEncryptionKey string
+
 module network 'modules/network.bicep' = {
   name: 'network'
   params: {
@@ -62,6 +66,7 @@ module sql 'modules/sql.bicep' = {
     databaseNames: [
       'catalog'
       'orders'
+      'users'
     ]
     adminLogin: sqlAdminLogin
     adminPassword: sqlAdminPassword
@@ -97,6 +102,23 @@ module redis 'modules/redis.bicep' = {
   }
 }
 
+// Queues between user-service, order-service and the sendEmail Function; the Function's storage too.
+module storage 'modules/storage.bicep' = {
+  name: 'storage'
+  params: {
+    location: location
+    name: take('${prefix}${suffix}', 24)
+  }
+}
+
+module communication 'modules/communication.bicep' = {
+  name: 'communication'
+  params: {
+    prefix: prefix
+    suffix: suffix
+  }
+}
+
 module containerApps 'modules/containerapps.bicep' = if(deployApps) {
   name: 'containerapps'
   params: {
@@ -112,8 +134,25 @@ module containerApps 'modules/containerapps.bicep' = if(deployApps) {
     sqlAdminPassword: sqlAdminPassword
     internalToken: internalToken
     jwtSecret: jwtSecret
+    mfaEncryptionKey: mfaEncryptionKey
     imageTag: imageTag
     redisName: redis.outputs.name
+    storageAccountName: storage.outputs.name
+  }
+}
+
+// The sendEmail Function on the Flex Consumption plan. Created with the base infrastructure so the
+// pipeline can deploy its code; it needs no container image.
+module functions 'modules/functions.bicep' = {
+  name: 'functions'
+  params: {
+    location: location
+    prefix: prefix
+    suffix: suffix
+    storageAccountName: storage.outputs.name
+    communicationServiceName: communication.outputs.communicationServiceName
+    emailSender: communication.outputs.senderAddress
+    appInsightsConnectionString: monitoring.outputs.appInsightsConnectionString
   }
 }
 
@@ -122,3 +161,4 @@ output registryLoginServer string = registry.outputs.loginServer
 output sqlServerFqdn string = sql.outputs.serverFqdn
 output webUrl string = containerApps.?outputs.webUrl ?? ''
 output gatewayUrl string = containerApps.?outputs.gatewayUrl ?? ''
+output functionAppName string = functions.outputs.name

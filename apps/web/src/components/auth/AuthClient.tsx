@@ -1,7 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
+import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
+import { register, signIn, verifyCode, type AuthFormState } from "@/lib/auth-actions";
+
+/** Text input on the index card; required unless told otherwise. */
+export function TextField({ label, ...input }: { label: string } & React.InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <label className="auth__field">
+      <span className="co__label small-upper">{label}</span>
+      <input className="co__input" required {...input} />
+    </label>
+  );
+}
 
 /** Primary submit: rough rust brush button with a pending label while the server action runs. */
 export function SubmitButton({ children, pending: pendingLabel }: { children: React.ReactNode; pending: string }) {
@@ -60,5 +72,74 @@ export function PasswordField({ label, name, autoComplete, hint, match, minLengt
       </span>
       {hint && <span className="co__hint">{hint}</span>}
     </label>
+  );
+}
+
+function FormError({ error }: { error?: string }) {
+  if (!error) return null;
+  return (
+    <p role="alert" className="auth__error m-0">
+      {error}
+    </p>
+  );
+}
+
+/**
+ * Sign-in form: a refused attempt shows why and keeps the email. next is where to go once signed in;
+ * notice is a line above the form (after registering, or after a password reset).
+ */
+export function SignInForm({ notice, next }: { notice?: string; next?: string }) {
+  const [state, formAction] = useActionState<AuthFormState, FormData>(signIn, {});
+  return (
+    <form action={formAction} className="auth__form">
+      {notice && !state.error && (
+        <p role="status" className="auth__sent m-0">
+          {notice}
+        </p>
+      )}
+      <FormError error={state.error} />
+      {next && <input type="hidden" name="next" value={next} />}
+      <TextField label="Email" name="email" type="email" autoComplete="email" placeholder="you@example.com" defaultValue={state.email} />
+      <PasswordField
+        label="Password"
+        name="password"
+        autoComplete="current-password"
+        aside={
+          <Link href="/forgot-password" className="auth__aside under-hover">
+            Forgot?
+          </Link>
+        }
+      />
+      <SubmitButton pending="Signing in…">Sign in</SubmitButton>
+    </form>
+  );
+}
+
+/** Register form: a refused attempt shows why and keeps the name and email, never the passwords. */
+export function RegisterForm() {
+  const [state, formAction] = useActionState<AuthFormState, FormData>(register, {});
+  return (
+    <form action={formAction} className="auth__form">
+      <FormError error={state.error} />
+      <TextField label="Name" name="name" autoComplete="name" defaultValue={state.name} />
+      <TextField label="Email" name="email" type="email" autoComplete="email" placeholder="you@example.com" defaultValue={state.email} />
+      <PasswordField label="Password" name="password" autoComplete="new-password" minLength={8} hint="At least 8 characters." />
+      <PasswordField label="Confirm password" name="confirm" autoComplete="new-password" match="password" />
+      <SubmitButton pending="Creating account…">Create account</SubmitButton>
+    </form>
+  );
+}
+
+/** The code step of a sign-in: six digits from the reader's authenticator app. */
+export function CodeForm({ next }: { next?: string }) {
+  const [state, formAction] = useActionState<AuthFormState, FormData>(verifyCode, {});
+  return (
+    <form action={formAction} className="auth__form">
+      <FormError error={state.error} />
+      {next && <input type="hidden" name="next" value={next} />}
+      <TextField label="Code from your authenticator app" name="code" autoComplete="one-time-code" maxLength={16} placeholder="123456" autoFocus />
+      <p className="co__hint m-0">Lost your phone? Type one of your recovery codes instead.</p>
+      <SubmitButton pending="Checking…">Sign in</SubmitButton>
+    </form>
   );
 }

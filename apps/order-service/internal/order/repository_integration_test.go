@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -388,5 +389,96 @@ func TestCancelAwaitingLeavesAPaidOrderAlone(t *testing.T) {
 	}
 	if got.Status != StatusConfirmed || got.PaymentStatus != PaymentPaid {
 		t.Errorf("status/payment = %q/%q: the paid order was changed", got.Status, got.PaymentStatus)
+	}
+}
+
+func TestListByUserShowsOnlyTheCustomersOrders(t *testing.T) {
+	repo := newTestRepo(t)
+	ctx := context.Background()
+
+	user := "it-user-" + newKey()
+	other := "it-user-" + newKey()
+
+	insert := func(owner *string, status, method, paymentStatus string) *Order {
+		t.Helper()
+		o := newTestOrder(t, repo)
+		o.UserID, o.Status, o.PaymentMethod, o.PaymentStatus = owner, status, method, paymentStatus
+		if status == StatusAwaitingPayment {
+			until := time.Now().Add(time.Hour)
+			o.ExpiresAt = &until
+		}
+		if err := repo.Insert(ctx, newKey(), o); err != nil {
+			t.Fatal(err)
+		}
+		return o
+	}
+
+	older := insert(&user, StatusConfirmed, PaymentCOD, PaymentUnpaid)
+	// A paid order is written awaiting payment and then paid, as in checkout.
+	paid := insert(&user, StatusAwaitingPayment, PaymentCard, PaymentUnpaid)
+	if err := repo.MarkPaid(ctx, paid.ID, "it-ref-"+paid.Code); err != nil {
+		t.Fatal(err)
+	}
+	insert(&user, StatusAwaitingPayment, PaymentVietQR, PaymentUnpaid) // not paid yet
+	insert(&user, StatusCancelled, PaymentCard, PaymentUnpaid)         // abandoned payment
+	insert(&other, StatusConfirmed, PaymentCOD, PaymentUnpaid)
+	insert(nil, StatusConfirmed, PaymentCOD, PaymentUnpaid)
+
+	got, err := repo.ListByUser(ctx, user, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(got) != 2 || got[0].Code != paid.Code || got[1].Code != older.Code {
+		codes := make([]string, len(got))
+		for i, o := range got {
+			codes[i] = o.Code
+		}
+		t.Fatalf("listed %v, want [%s %s] (newest first, only orders the customer got)", codes, paid.Code, older.Code)
+	}
+	if len(got[0].Items) != 2 {
+		t.Errorf("items = %+v, want the two books", got[0].Items)
+	}
+
+	none, err := repo.ListByUser(ctx, "it-user-nobody", 10)
+	if err != nil || none == nil || len(none) != 0 {
+		t.Errorf("no orders = %v, %v; want an empty list", none, err)
+	}
+}
+
+func TestLinkGuestOrders(t *testing.T) {
+	repo := newTestRepo(t)
+	ctx := context.Background()
+
+	email := "IT-" + newKey() + "@Example.com"
+	user, other := "it-user-"+newKey(), "it-user-"+newKey()
+
+	insert := func(owner *string) *Order {
+		t.Helper()
+		o := newTestOrder(t, repo)
+		o.Email, o.UserID = email, owner
+		if err := repo.Insert(ctx, newKey(), o); err != nil {
+			t.Fatal(err)
+		}
+		return o
+	}
+
+	guest := insert(nil)
+	theirs := insert(&other)
+
+	n, err := repo.LinkGuestOrders(ctx, user, strings.ToLower(email))
+	if err != nil || n != 1 {
+		t.Fatalf("LinkGuestOrders = %d, %v; want 1", n, err)
+	}
+
+	if got, _ := repo.FindByCode(ctx, guest.Code); got.UserID == nil || *got.UserID != user {
+		t.Errorf("guest order user = %v, want %s", got.UserID, user)
+	}
+	if got, _ := repo.FindByCode(ctx, theirs.Code); got.UserID == nil || *got.UserID != other {
+		t.Errorf("someone else's order moved to %v", got.UserID)
+	}
+
+	if n, _ := repo.LinkGuestOrders(ctx, user, email); n != 0 {
+		t.Errorf("second call linked %d, want 0", n)
 	}
 }

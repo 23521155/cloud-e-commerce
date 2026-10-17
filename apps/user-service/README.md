@@ -1,114 +1,244 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# user-service
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Accounts for the shop: registration, sign-in and sessions, the reader's profile, email confirmation, password reset, two-step sign-in (TOTP) and the staff role. Written in Go (Gin, sqlx), with its own SQL Server database `users`.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+It is the *service đăng ký tài khoản người dùng* of `docs/course/rubric-project.csv` (4/Web). It talks to the purchase service (order-service) through an Azure Storage queue; see [Talking to order-service](#talking-to-order-service).
 
-## Description
+## Where it sits
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Project setup
-
-```bash
-$ npm install
+```mermaid
+flowchart LR
+  browser([Browser]) --> web[web<br/>Next.js]
+  web -->|/api/users/*| gw[api-gateway]
+  gw -->|strips /api/users,<br/>verifies the JWT,<br/>sets X-User-*| us[user-service]
+  us --> db[(SQL Server<br/>users)]
+  us -->|outbox relay| q1[[email-outbox]]
+  us -->|outbox relay| q2[[user-email-verified]]
+  q1 --> fn[sendEmail<br/>Azure Function]
+  fn --> mail[ACS Email / SMTP]
+  q2 --> os[order-service]
 ```
 
-## Compile and run the project
+- The gateway forwards `/api/users/<path>` to `user-service/<path>`. Example: `POST /api/users/auth/login` arrives here as `POST /auth/login`.
+- The gateway also verifies the access token. On success it replaces any client-sent identity headers with `X-User-ID`, `X-User-Email` and `X-User-Roles`, taken from the token.
+- user-service trusts `X-User-ID` and never parses a token itself. It must therefore only be reachable through the gateway: on Azure its ingress is internal.
+- The web never sees tokens in page scripts. It keeps them in httpOnly cookies and calls the gateway from the server (`apps/web/src/lib/user-api.ts`, `session.ts`, `proxy.ts`).
+
+## Run it locally
+
+From the repository root:
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+docker compose up -d --build
 ```
 
-## Run tests
+This starts, among the rest:
+
+| Container | What | Host port |
+|---|---|---|
+| `users-db` → `users-db-init` → `users-migrate` | SQL Server, the `users` database, migrations | `USERS_DB_PORT`, default 1436 |
+| `user-service` | the API | 8085 |
+| `azurite` | Azure Storage emulator (queues) | 10000–10002 |
+| `functions` | Functions host running `sendEmail` | 7071 |
+| `mailpit` | catches every email | UI at <http://localhost:8025>, SMTP 1025 |
+
+Run the web app with `npm run dev` in `apps/web`, then open <http://localhost:3000/register>. The confirmation email shows up in Mailpit.
+
+> On Windows, Hyper-V may reserve ports around 1436. If `users-db` cannot bind, set `USERS_DB_PORT` (for example `11436`) in the root `.env`.
+
+Compose sets development defaults for every secret (`JWT_SECRET`, `MFA_ENCRYPTION_KEY`, the Azurite key). Do not reuse them anywhere else.
+
+## Configuration
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `PORT` | `8085` | HTTP port |
+| `DATABASE_URL` | — | `sqlserver://…?database=users&encrypt=true` (add `&trustServerCertificate=true` for a local container) |
+| `JWT_SECRET` | — | Must equal the gateway's: it verifies the tokens signed here. The service does not start without it. |
+| `JWT_ISSUER` | — | Must equal the gateway's |
+| `JWT_ACCESS_TTL` | `15m` | Lifetime of an access token |
+| `JWT_REFRESH_TTL` | `720h` | How long an unused device stays signed in |
+| `WEB_URL` | `http://localhost:3000` | Base of the links in emails |
+| `STORAGE_CONNECTION_STRING` | — | Storage account for the queues. Empty: messages wait in the outbox table. |
+| `MFA_ENCRYPTION_KEY` | — | base64 of 32 random bytes (`openssl rand -base64 32`). Empty: two-step sign-in cannot be set up. Changing it makes existing TOTP secrets unreadable. |
+
+`configs/.env.example` lists the same variables. For a run outside Docker, copy it to `configs/.env` (gitignored): it is read from the working directory when present.
+
+## API
+
+All bodies are JSON. Errors are `{"error": "<message>"}`. For a `400` caused by a bad field, the message names the field (for example `invalid input: password must be 8 to 128 characters`).
+
+Endpoints marked 🔒 need a valid access token at the gateway; without one they answer `401`.
+
+### Accounts and sessions
+
+| Method and path | Body | Answers |
+|---|---|---|
+| `POST /auth/register` | `name`, `email`, `password` | `201` the account · `400` · `409` email taken |
+| `POST /auth/login` | `email`, `password` | `200` tokens · `200 {mfaRequired, mfaToken, mfaExpiresAt}` when a code is due · `401` |
+| `POST /auth/refresh` | `refreshToken` | `200` new tokens · `401` |
+| `POST /auth/logout` | `refreshToken` | `204` always |
+| 🔒 `GET /me` | — | `200` the account |
+| 🔒 `PUT /me` | `name`, `phone`, `address`, `city`, `postalCode`, `country` | `200` the account · `400` |
+| 🔒 `POST /me/password` | `current`, `password` | `200` tokens of a new session · `403` wrong current password · `400` |
+
+**Tokens** (from login, refresh, password change and the MFA step):
+
+```json
+{
+  "accessToken": "eyJ…",
+  "tokenType": "Bearer",
+  "expiresAt": "…",
+  "refreshToken": "…",
+  "refreshExpiresAt": "…",
+  "user": { … }
+}
+```
+
+**The account:**
+
+```json
+{
+  "id": "0199…", "email": "…", "name": "…", "role": "customer",
+  "emailVerifiedAt": null, "totpEnabledAt": null, "createdAt": "…",
+  "phone": "", "address": "", "city": "", "postalCode": "", "country": ""
+}
+```
+
+`id` is a UUIDv7 string. It is the JWT subject and `orders.user_id` in order-service. Empty profile strings mean "not given". The email cannot be changed: that would need the new address confirmed.
+
+### Email links
+
+| Method and path | Body | Answers |
+|---|---|---|
+| `POST /auth/verify-email` | `token` | `200 {email, emailVerifiedAt}` · `400` link used or expired |
+| 🔒 `POST /me/verify-email` | — | `202` sent · `409` already confirmed · `429` one a minute |
+| `POST /auth/forgot-password` | `email` | `202` always, account or not |
+| `POST /auth/reset-password` | `token`, `password` | `204` · `400` link used or expired, or password refused |
+
+### Two-step sign-in
+
+| Method and path | Body | Answers |
+|---|---|---|
+| 🔒 `POST /me/mfa/totp/setup` | — | `200 {secret, otpauthUrl}` · `409` already on · `503` no key configured |
+| 🔒 `POST /me/mfa/totp/confirm` | `code` | `200 {recoveryCodes}` (shown once) · `400` wrong code · `409` |
+| 🔒 `POST /me/mfa/totp/disable` | `password`, `code` | `204` · `403` wrong password · `400` wrong code · `409` not on |
+| `POST /auth/mfa/verify` | `mfaToken`, `code` | `200` tokens · `400` wrong code · `401` step expired or too many tries |
+
+`code` is the 6 digits from the app, or a recovery code (`xxxx-xxxx-xxxx`, any case, dashes optional).
+
+`GET /health` answers `200` when the database answers, `503` otherwise.
+
+## How it works
+
+### Passwords
+
+- Hashed with argon2id: 19 MiB, 2 passes, 1 lane (the OWASP minimum). Stored in PHC format, so the parameters travel with each hash.
+- Length is 8 to 128 characters.
+- A wrong email and a wrong password get the same answer. Login also hashes when the email is unknown, so the response time does not reveal which accounts exist.
+
+### Sessions
+
+- **Access token:** JWT, HS256, signed with the gateway's secret. Claims are `sub`, `email`, `name`, `roles` and `amr`. `amr` is `["pwd"]`, or `["pwd","otp"]` after a second factor.
+- **Refresh token:** 32 random bytes. Only its SHA-256 is stored, in `refresh_tokens`. Signing in starts a *family*: one row per refresh, one family per device. The family records the device name the gateway derives from the User-Agent, and its `amr`.
+- **Rotation:** each refresh uses up the token and adds the next one to the family. A used token is accepted again for 30 seconds, because two tabs can refresh at once. After that, a used token means it was copied, and the whole family is revoked.
+- **Sign-out** revokes the family. **Changing or resetting the password**, and **changing the role**, revoke every family of the account.
+- Access tokens are not stored. One that was already issued stays valid until it expires (15 minutes by default), even after sign-out.
+
+### Two-step sign-in (TOTP)
+
+- RFC 6238: SHA-1, 6 digits, 30 seconds, as Google and Microsoft Authenticator read it from the QR code.
+- **The secret:** setup creates it and stores it encrypted with AES-256-GCM (`MFA_ENCRYPTION_KEY`, package `internal/secretbox`). A first code turns two-step sign-in on and returns 10 recovery codes; only their hashes are kept.
+- **Signing in:** with it on, the right password does not sign in. It opens a 5-minute *challenge* (`mfa_challenges`). `/auth/mfa/verify` finishes it with a code.
+- **Codes:** the current 30-second step is accepted, plus one step either side. Each step is accepted once (`users.totp_last_step`). Five wrong codes end the challenge.
+
+### Email, and the outbox
+
+- **One transaction:** a change that must send something writes the message to the `outbox` table in the same transaction. Examples: a new account with its confirmation email, or a confirmed address with its event. Neither can happen without the other.
+- **The relay** (`internal/outbox`) runs inside user-service. Every 2 seconds it claims up to 20 rows, puts each on its queue (base64 JSON, as Functions queue triggers expect), then deletes it.
+  - A claim hides the row from other replicas for 30 seconds; a row that failed to send is claimed again after that.
+  - Delivery is at least once, so every consumer must accept a message twice.
+- **Writing the email:** `internal/email` writes each email (text and HTML).
+- **Sending it:** the `sendEmail` Function (`apps/functions`) only delivers.
+  - It is triggered by `email-outbox`.
+  - On Azure it sends through Azure Communication Services; locally, over SMTP to Mailpit.
+  - A send that fails is retried by the queue, and moves to `email-outbox-poison` after 5 tries.
+
+| Link | Valid for | Notes |
+|---|---|---|
+| Confirm email (`/verify-email?token=…`) | 24 hours | At most one email a minute. The web page confirms only when the button is pressed, so a mail scanner that opens links cannot confirm. |
+| Reset password (`/reset-password?token=…`) | 30 minutes | At most one a minute. Using one link uses up every reset link of the account. |
+
+Only the SHA-256 of a link's token is stored (`email_tokens`).
+
+### Talking to order-service
+
+The shop allows guest checkout. When a reader confirms their address:
+
+1. user-service writes a `user.email_verified` event to the outbox, in the same transaction as the confirmation. The relay puts it on the `user-email-verified` queue: `{"type":"user.email_verified","userId":"…","email":"…","verifiedAt":"…"}`.
+2. order-service (`internal/accountevents`) reads the queue. It sets `user_id` on every guest order placed with that address (case ignored) and leaves orders that already belong to someone.
+
+Handling the same message twice links nothing more. A message that keeps failing goes to `user-email-verified-poison`.
+
+The address must be *confirmed* first, as WooCommerce also requires. Otherwise anyone could register someone else's email and see their orders.
+
+### Staff
+
+Staff are ordinary accounts with role `staff`. The shop office (`/admin` in the web) only lets in a session that has the staff role and passed the code step (`amr` contains `otp`). Give or take the role with `set-role`, which ships in the image and reads `DATABASE_URL`:
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+docker compose run --rm --no-deps --entrypoint ./set-role user-service -email someone@example.com -role staff
+docker compose run --rm --no-deps --entrypoint ./set-role user-service -email someone@example.com -role customer
 ```
 
-## Deployment
+The account must exist (register it on the shop first). Its sessions end, so the next sign-in carries the new role.
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+## Database
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+Migrations live in `migrations/` and are applied by `migrate/migrate`: by compose locally, and by the deploy pipeline on Azure.
+
+| Table | Holds |
+|---|---|
+| `users` | Account, argon2id hash, role, profile, `email_verified_at`, the sealed TOTP secret and its state |
+| `refresh_tokens` | One row per refresh token (hash), its family, device, `amr`, used and revoked times |
+| `email_tokens` | Confirmation and reset links (hash), with the address they were sent to |
+| `outbox` | Messages waiting for their queue |
+| `mfa_challenges` | The code step of a sign-in (hash), with its tries |
+| `recovery_codes` | Recovery codes (hash), used once |
+
+Expired tokens, challenges and used links are not cleaned up yet.
+
+## Code layout
+
+```
+cmd/server        the API: wiring, the outbox relay, graceful shutdown
+cmd/set-role      gives or takes the staff role
+internal/user     handlers, service rules and SQL for accounts, sessions, links, TOTP
+internal/token    signs access tokens (the gateway's claims, plus name and amr)
+internal/outbox   outbox table, relay, queue sender, message shapes
+internal/email    the emails' text and HTML
+internal/secretbox AES-256-GCM for TOTP secrets
+internal/config, database, logger, router   as in the other Go services
+```
+
+## Tests
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+go vet ./...
+go test ./...
+
+# Repository tests against a migrated database (the local container, for example):
+DATABASE_URL='sqlserver://sa:Users_dev_123@localhost:1436?database=users&encrypt=true&trustServerCertificate=true' \
+  go test -tags integration ./internal/user/
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+The unit tests replace the database, clock, token issuer and encryption with fakes. The integration tests create their own accounts and remove them afterwards.
 
-## Observability
+## On Azure
 
-In production applications, observability is essential for understanding how your system behaves, detecting issues early, and maintaining reliable performance.
+- **user-service:** a Container App with internal ingress on port 8085 (`infra/modules/containerapps.bicep`), and the `users` database on the shared Azure SQL server.
+- **sendEmail:** a Function App on the Flex Consumption plan (`infra/modules/functions.bicep`, Node 22), billed per execution and scaled on the `email-outbox` queue down to zero. The deploy pipeline ships its code as a zip package (`az functionapp deployment source config-zip`). Flex Consumption is available in `japaneast` and `koreacentral`, not in `indiasouthcentral`.
+- **Supporting resources:** the queues are in the storage account from `infra/modules/storage.bicep`, and email goes through Azure Communication Services (`infra/modules/communication.bicep`, Azure-managed domain).
+- **Secrets:** `JWT_SECRET` and `MFA_ENCRYPTION_KEY` come from the repository's GitHub secrets.
 
-[NestJS Observe](https://observe.nestjs.com) automatically instruments your NestJS application, giving you deep visibility into your system with minimal setup:
-
-- **Distributed tracing:** Follow requests across services and understand how they flow through your system.
-- **Waterfall analysis:** Visualize request execution and identify slow operations, bottlenecks, and unexpected delays.
-- **Performance analysis:** Analyze application performance in real time and quickly pinpoint areas that need optimization.
-- **Metrics:** Track key application and infrastructure metrics to understand system health and performance trends.
-- **Logging:** Centralize and correlate logs with traces and other telemetry to make debugging easier.
-- **Error tracking:** Detect errors quickly and investigate their root causes with the surrounding context.
-- **SLA monitoring:** Track service-level objectives and identify when your application is approaching or exceeding defined thresholds.
-- **Alarms and alerts:** Set up alerts for critical errors, performance degradation, SLA violations, and other anomalies so your team can react quickly.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Auto-instrument your application with [NestJS Observer](https://observer.nestjs.com). Distributed tracing, metrics, and logging made easy. Error tracking and performance monitoring for your NestJS applications.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+The deploy pipeline (`.github/workflows/deploy.yml`) builds the images, runs the migrations and rolls the apps out on push to `develop`. Its smoke test calls `/api/users/health` through the gateway.

@@ -41,6 +41,11 @@ type Config struct {
 	PaymentHold time.Duration
 
 	VNPay VNPay
+
+	// StorageConnectionString is the Azure Storage account whose
+	// user-email-verified queue the user service writes (Azurite locally).
+	// Empty: guest orders are not linked to accounts.
+	StorageConnectionString string
 }
 
 // VNPay is the merchant account at VNPay. Online payments are off while
@@ -113,6 +118,8 @@ func Load() (*Config, error) {
 		CatalogGRPCTLS: tls,
 
 		InternalToken: os.Getenv("INTERNAL_TOKEN"),
+
+		StorageConnectionString: os.Getenv("STORAGE_CONNECTION_STRING"),
 
 		PaymentHold: time.Duration(holdMinutes) * time.Minute,
 

@@ -2,14 +2,14 @@
 
 import { placeOrder } from "@/app/(shop)/checkout/actions";
 import { BasketSkeleton } from "@/components/basket/BasketSkeleton";
-import { Checkout } from "@/components/checkout/Checkout";
+import { Checkout, type CheckoutPrefill } from "@/components/checkout/Checkout";
 import { MotionController } from "@/components/motion/MotionController";
 import { DotButton } from "@/components/ui/DotButton";
 import { subtotal } from "@/lib/basket";
 import { useBasketLines } from "@/lib/basket-store";
 
 /** The checkout page. The basket lives in this browser, so it is read here. */
-export function CheckoutView() {
+export function CheckoutView({ prefill }: { prefill?: CheckoutPrefill }) {
   const { lines: all, failed } = useBasketLines();
   // Sold copies are dropped here: they cannot be bought
   const lines = all?.filter((l) => !l.sold) ?? null;
@@ -49,7 +49,7 @@ export function CheckoutView() {
             </DotButton>
           </div>
         ) : (
-          <Checkout lines={lines} total={subtotal(lines)} action={placeOrder} />
+          <Checkout lines={lines} total={subtotal(lines)} action={placeOrder} prefill={prefill} />
         )}
       </section>
     </>

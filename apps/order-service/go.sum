@@ -10,6 +10,8 @@ github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys v1.5.0 h1:MaKvxE6
 github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys v1.5.0/go.mod h1:i2h9fsTFKZorh8RdV2IcSUf/Qj98GlTkrTvUbX/s8as=
 github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/internal v1.2.0 h1:nCYfgcSyHZXJI8J0IWE5MsCGlb2xp9fJiXyxWgmOFg4=
 github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/internal v1.2.0/go.mod h1:ucUjca2JtSZboY8IoUqyQyuuXvwbMBVwFOm0vdQPNhA=
+github.com/Azure/azure-sdk-for-go/sdk/storage/azqueue v1.0.1 h1:qvrrnQ2mIjwY7IVlQuNB0ma43Nr74+9ZTZJ60KlmlV4=
+github.com/Azure/azure-sdk-for-go/sdk/storage/azqueue v1.0.1/go.mod h1:FkF/Az07vR3S4sBdjCuisznWfFWOD8u6Ibm/g/oyDAk=
 github.com/AzureAD/microsoft-authentication-library-for-go v1.8.0 h1:Nljr4q1GRA/5vCrMONS+g4u4LRHNgOXVSh3O43J2CnI=
 github.com/AzureAD/microsoft-authentication-library-for-go v1.8.0/go.mod h1:Y33QHnf0FfdVewFFISOGe20mkZbxX4H839o955/PoeI=
 github.com/bytedance/gopkg v0.1.3 h1:TPBSwH8RsouGCBcMBktLt1AymVo2TVsBVCY4b6TnZ/M=

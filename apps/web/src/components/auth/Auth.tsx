@@ -1,18 +1,23 @@
 import Link from "next/link";
-import { PasswordField, SubmitButton } from "@/components/auth/AuthClient";
+import { CodeForm, PasswordField, RegisterForm, SignInForm, SubmitButton, TextField } from "@/components/auth/AuthClient";
 import { BookCover } from "@/components/ui/BookArt";
-import { continueWithGoogle, register, requestReset, signIn } from "@/lib/auth-actions";
+import { verifyEmail } from "@/lib/account-actions";
+import { continueWithGoogle, requestReset, resetPassword } from "@/lib/auth-actions";
 
-export type AuthMode = "sign-in" | "register" | "forgot";
+export type AuthMode = "sign-in" | "register" | "forgot" | "verify" | "reset" | "code";
 
-function TextField({ label, ...input }: { label: string } & React.InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <label className="auth__field">
-      <span className="co__label small-upper">{label}</span>
-      <input className="co__input" required {...input} />
-    </label>
-  );
-}
+/** The reset page's state: the token from the link, and why the last try was refused. */
+export type ResetState = { token?: string; error?: "invalid-link" | "weak" | "mismatch" | "failed" };
+
+const RESET_ERROR: Record<NonNullable<ResetState["error"]>, string> = {
+  "invalid-link": "This link has already been used or has expired. Ask for a new one below.",
+  weak: "The new password must be 8 to 128 characters.",
+  mismatch: "The new password and the repeat do not match.",
+  failed: "The password could not be changed right now. Please try again in a moment.",
+};
+
+/** The confirmation page's state: the token from the link, or how confirming went. */
+export type VerifyState = { token?: string; done?: boolean; error?: "invalid" | "failed" };
 
 function GoogleButton({ label }: { label: string }) {
   return (
@@ -38,38 +43,13 @@ function Divider() {
   );
 }
 
-function SignInForm() {
+function SignIn({ notice, next }: { notice?: string; next?: string }) {
   return (
     <>
-      <form action={signIn} className="auth__form">
-        <TextField label="Email" name="email" type="email" autoComplete="email" placeholder="you@example.com" />
-        <PasswordField
-          label="Password"
-          name="password"
-          autoComplete="current-password"
-          aside={
-            <Link href="/forgot-password" className="auth__aside under-hover">
-              Forgot?
-            </Link>
-          }
-        />
-        <SubmitButton pending="Signing in…">Sign in</SubmitButton>
-      </form>
+      <SignInForm notice={notice} next={next} />
       <Divider />
       <GoogleButton label="Continue with Google" />
     </>
-  );
-}
-
-function RegisterForm() {
-  return (
-      <form action={register} className="auth__form">
-        <TextField label="Name" name="name" autoComplete="name" />
-        <TextField label="Email" name="email" type="email" autoComplete="email" placeholder="you@example.com" />
-        <PasswordField label="Password" name="password" autoComplete="new-password" minLength={8} hint="At least 8 characters." />
-        <PasswordField label="Confirm password" name="confirm" autoComplete="new-password" match="password" />
-        <SubmitButton pending="Creating account…">Create account</SubmitButton>
-      </form>
   );
 }
 
@@ -90,16 +70,85 @@ function ForgotForm({ sent }: { sent: boolean }) {
   );
 }
 
+function ResetForm({ token, error }: ResetState) {
+  const refused = error && (
+    <p role="alert" className="auth__error m-0">
+      {RESET_ERROR[error]}
+    </p>
+  );
+  if (!token) {
+    return (
+      <div className="auth__form">
+        {refused ?? (
+          <p role="alert" className="auth__error m-0">
+            This page needs the link from the email. Please open it from there.
+          </p>
+        )}
+        <Link href="/forgot-password" className="auth__aside under-hover">
+          Send me a new link
+        </Link>
+      </div>
+    );
+  }
+  return (
+    <form action={resetPassword} className="auth__form">
+      {refused}
+      <input type="hidden" name="token" value={token} />
+      <PasswordField label="New password" name="password" autoComplete="new-password" minLength={8} hint="At least 8 characters." />
+      <PasswordField label="Confirm password" name="confirm" autoComplete="new-password" match="password" />
+      <SubmitButton pending="Saving…">Set the new password</SubmitButton>
+    </form>
+  );
+}
+
+function VerifyForm({ token, done, error }: VerifyState) {
+  if (done) {
+    return (
+      <div className="auth__sent" role="status">
+        <p className="m-0">Thank you: your email address is confirmed.</p>
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <p role="alert" className="auth__error m-0">
+        {error === "invalid"
+          ? "This link has already been used or has expired. You can ask for a new one on your account page."
+          : "The address could not be confirmed right now. Please open the link again in a moment."}
+      </p>
+    );
+  }
+  if (!token) {
+    return (
+      <p role="alert" className="auth__error m-0">
+        This page needs the link from the email. Please open it from there.
+      </p>
+    );
+  }
+  return (
+    <form action={verifyEmail} className="auth__form">
+      <input type="hidden" name="token" value={token} />
+      <SubmitButton pending="Confirming…">Confirm my email</SubmitButton>
+    </form>
+  );
+}
+
 const COPY: Record<AuthMode, { card: string; title: [string, string]; intro: string }> = {
   "sign-in": { card: "Reader's card", title: ["Welcome", "back"], intro: "Sign in to see your basket and orders." },
   register: { card: "New reader", title: ["Open an", "account"], intro: "Keep a basket across devices and follow your orders." },
   forgot: { card: "Lost card", title: ["Reset your", "password"], intro: "Enter the email you signed up with and we will send a reset link." },
+  verify: { card: "Reader's card", title: ["Confirm your", "email"], intro: "One click, and the shop knows this address is yours." },
+  reset: { card: "Lost card", title: ["Choose a new", "password"], intro: "Every device you were signed in on will be signed out." },
+  code: { card: "Reader's card", title: ["One more", "step"], intro: "Open your authenticator app and type the code it shows for Marginalleya." },
 };
 
 const SWITCH: Record<AuthMode, { text: string; link: string; href: string }> = {
   "sign-in": { text: "New here?", link: "Create an account", href: "/register" },
   register: { text: "Already have an account?", link: "Sign in", href: "/sign-in" },
   forgot: { text: "Remembered it?", link: "Back to sign in", href: "/sign-in" },
+  verify: { text: "Done here?", link: "Go to your account", href: "/account" },
+  reset: { text: "Remembered it?", link: "Back to sign in", href: "/sign-in" },
+  code: { text: "Not you?", link: "Start again", href: "/sign-in" },
 };
 
 const SHELF = [
@@ -109,7 +158,22 @@ const SHELF = [
 ];
 
 /** Every auth screen: heading and a few books on the left, the form on an index card on the right. */
-export function AuthPage({ mode, sent = false }: { mode: AuthMode; sent?: boolean }) {
+export function AuthPage({
+  mode,
+  sent = false,
+  notice,
+  next,
+  verify,
+  reset,
+}: {
+  mode: AuthMode;
+  sent?: boolean;
+  /** A line above the sign-in form. */
+  notice?: string;
+  next?: string;
+  verify?: VerifyState;
+  reset?: ResetState;
+}) {
   const copy = COPY[mode];
   const sw = SWITCH[mode];
   return (
@@ -140,9 +204,12 @@ export function AuthPage({ mode, sent = false }: { mode: AuthMode; sent?: boolea
             <span>Marginalleya</span>
           </div>
           <div className="auth__body">
-            {mode === "sign-in" && <SignInForm />}
+            {mode === "sign-in" && <SignIn notice={notice} next={next} />}
             {mode === "register" && <RegisterForm />}
             {mode === "forgot" && <ForgotForm sent={sent} />}
+            {mode === "verify" && <VerifyForm {...verify} />}
+            {mode === "reset" && <ResetForm {...reset} />}
+            {mode === "code" && <CodeForm next={next} />}
             <p className="auth__switch">
               {sw.text}{" "}
               <Link href={sw.href} className="under-hover ml-1">

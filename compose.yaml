@@ -5,3 +5,5 @@ include:
   - ./apps/api-gateway/compose.yaml
   - ./apps/catalog-service/compose.yaml
   - ./apps/order-service/compose.yaml
+  - ./apps/user-service/compose.yaml
+  - ./apps/functions/compose.yaml

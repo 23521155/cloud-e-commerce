@@ -22,11 +22,19 @@ type fakeCreator struct {
 	err      error
 
 	got CreateInput
+
+	orders    []Order
+	gotUserID string
 }
 
 func (f *fakeCreator) Create(ctx context.Context, in CreateInput) (Order, bool, error) {
 	f.got = in
 	return f.order, f.replayed, f.err
+}
+
+func (f *fakeCreator) ListMine(ctx context.Context, userID string) ([]Order, error) {
+	f.gotUserID = userID
+	return f.orders, f.err
 }
 
 const validBody = `{
@@ -44,6 +52,12 @@ const validBody = `{
 // post sends body to POST / with an idempotency key and returns the response.
 func post(t *testing.T, svc creator, body string) *httptest.ResponseRecorder {
 	t.Helper()
+	return postAs(t, svc, body, "")
+}
+
+// postAs is post for a signed-in customer; userID "" is a guest.
+func postAs(t *testing.T, svc creator, body, userID string) *httptest.ResponseRecorder {
+	t.Helper()
 
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
@@ -52,6 +66,9 @@ func post(t *testing.T, svc creator, body string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(idempotencyHeader, "3f9c1a52-7b0e-4d4a-9c1e-8a2b5d6f7e10")
+	if userID != "" {
+		req.Header.Set(userIDHeader, userID)
+	}
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -86,6 +103,90 @@ func TestCreateHandlerCreated(t *testing.T) {
 	}
 	if len(in.Slugs) != 2 || in.Slugs[0] != "nha-gia-kim" || in.FullName != "Nguyễn Văn A" || in.PostalCode != nil {
 		t.Errorf("input = %+v, want the body fields", in)
+	}
+	if in.UserID != nil {
+		t.Errorf("UserID = %q, want nil for a guest", *in.UserID)
+	}
+}
+
+func TestCreateHandlerSignedIn(t *testing.T) {
+
+	svc := &fakeCreator{order: Order{Code: "MA-048291"}}
+
+	w := postAs(t, svc, validBody, "01a14046-945e-79f4-9de0-dcc903fd7cea")
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201", w.Code)
+	}
+	if svc.got.UserID == nil || *svc.got.UserID != "01a14046-945e-79f4-9de0-dcc903fd7cea" {
+		t.Errorf("UserID = %v, want the X-User-ID value", svc.got.UserID)
+	}
+}
+
+// getMine sends GET / as userID ("" for a guest) and returns the response.
+func getMine(t *testing.T, svc creator, userID string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	NewHandler(svc, zap.NewNop()).Register(r.Group(""))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	if userID != "" {
+		req.Header.Set(userIDHeader, userID)
+	}
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	return w
+}
+
+func TestListMineHandler(t *testing.T) {
+
+	svc := &fakeCreator{orders: []Order{{Code: "MA-000002"}, {Code: "MA-000001"}}}
+
+	w := getMine(t, svc, "u1")
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body %s", w.Code, w.Body)
+	}
+	if svc.gotUserID != "u1" {
+		t.Errorf("listed for %q, want u1", svc.gotUserID)
+	}
+
+	var body struct {
+		Items []struct {
+			Code string `json:"code"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Items) != 2 || body.Items[0].Code != "MA-000002" {
+		t.Errorf("body = %s", w.Body)
+	}
+}
+
+func TestListMineHandlerNeedsSignIn(t *testing.T) {
+
+	svc := &fakeCreator{}
+	w := getMine(t, svc, "")
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want 401", w.Code)
+	}
+	if svc.gotUserID != "" {
+		t.Error("the service was asked for a guest's orders")
+	}
+}
+
+func TestListMineHandlerHidesInternalErrors(t *testing.T) {
+
+	w := getMine(t, &fakeCreator{err: errors.New("mssql: login failed for user sa")}, "u1")
+
+	if w.Code != http.StatusInternalServerError || strings.Contains(w.Body.String(), "mssql") {
+		t.Errorf("status %d, body %s", w.Code, w.Body)
 	}
 }
 

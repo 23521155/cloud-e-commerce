@@ -85,7 +85,28 @@ services:
       retries: 10
       start_period: 15s
 
+  # Azure Storage emulator: the queues between the services and the Azure Functions.
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:3.35.0
+    restart: unless-stopped
+    command: azurite --blobHost 0.0.0.0 --queueHost 0.0.0.0 --tableHost 0.0.0.0 --location /data --skipApiVersionCheck
+    ports:
+      - "${AZURITE_BLOB_PORT:-10000}:10000"
+      - "${AZURITE_QUEUE_PORT:-10001}:10001"
+      - "${AZURITE_TABLE_PORT:-10002}:10002"
+    volumes:
+      - azurite-data:/data
+
+  # Catches every email sent locally; read them at http://localhost:8025.
+  mailpit:
+    image: axllent/mailpit:v1.27
+    restart: unless-stopped
+    ports:
+      - "${MAILPIT_UI_PORT:-8025}:8025"
+      - "${MAILPIT_SMTP_PORT:-1025}:1025"
+
 volumes:
+  azurite-data:
   redis-data:
     name: fiurozz-redis-data
   rabbitmq-data:

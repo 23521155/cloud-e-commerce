@@ -2,6 +2,7 @@
 
 import { BasketIcon } from "@/components/ui/BasketIcon";
 import { Logo } from "@/components/ui/Logo";
+import { signOut } from "@/lib/auth-actions";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
@@ -64,7 +65,7 @@ const UserIcon = () => (
  * rogue.studio-style navigation: a thin vertical bar on the right (a top bar on phones)
  * with a dots toggle that slides a menu panel out of the bar.
  */
-export function SiteHeader() {
+export function SiteHeader({ reader }: { reader: { name: string } | null }) {
   const [open, setOpen] = useState(false);
   const toggleRef = useRef<HTMLButtonElement>(null);
   const firstLinkRef = useRef<HTMLAnchorElement>(null);
@@ -99,7 +100,7 @@ export function SiteHeader() {
         <Link href="/wishlist" className="side-nav__icon" aria-label="Wishlist" onClick={close}>
           <HeartIcon />
         </Link>
-        <Link href="/account" className="side-nav__icon" aria-label="Your account" onClick={close}>
+        <Link href={reader ? "/account" : "/sign-in"} className="side-nav__icon" aria-label={reader ? `Your account (${reader.name})` : "Sign in"} onClick={close}>
           <UserIcon />
         </Link>
         <button
@@ -147,9 +148,27 @@ export function SiteHeader() {
 
         <div>
           <span className="small-upper text-ink-600">Account</span>
-          <Link href="/sign-in" className="under-hover mt-1 block w-fit text-lg" onClick={close}>
-            Sign in
-          </Link>
+          {reader ? (
+            <>
+              <p className="m-0 mt-1 text-lg">
+                Signed in as <em>{reader.name}</em>
+              </p>
+              <div className="mt-1 flex flex-wrap items-baseline gap-x-6">
+                <Link href="/account" className="under-hover block w-fit text-lg" onClick={close}>
+                  Your account
+                </Link>
+                <form action={signOut}>
+                  <button type="submit" className="under-hover text-lg">
+                    Sign out
+                  </button>
+                </form>
+              </div>
+            </>
+          ) : (
+            <Link href="/sign-in" className="under-hover mt-1 block w-fit text-lg" onClick={close}>
+              Sign in
+            </Link>
+          )}
         </div>
 
         <div className="small-upper flex flex-wrap items-center justify-between gap-4 border-t border-walnut-900/15 pt-5 text-ink-600">

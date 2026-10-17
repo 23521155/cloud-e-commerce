@@ -2022,6 +2022,14 @@
     color: #a8542f; /* rust orange, same as the solid buttons */
     font-style: normal;
   }
+  .auth__error {
+    border: 1px dashed var(--color-oxblood-700);
+    padding: 12px 16px;
+    color: var(--color-oxblood-700);
+    font-family: var(--font-serif);
+    font-size: clamp(16px, 1.2vw, 18px);
+    line-height: 1.45;
+  }
   .auth__sent {
     color: var(--color-walnut-900);
     font-family: var(--font-serif);
@@ -2302,6 +2310,44 @@
   }
   .ledger__slip :where(button, input):focus-visible {
     outline-color: var(--color-oxblood-700);
+  }
+  /* A second slip below the first, leaning the other way */
+  .ledger__slip--second {
+    rotate: 0.8deg;
+  }
+  .two-step {
+    display: grid;
+    gap: 18px 28px;
+    align-items: start;
+  }
+  @media (min-width: 720px) {
+    .two-step {
+      grid-template-columns: auto minmax(0, 1fr);
+    }
+  }
+  .two-step__qr {
+    width: 220px;
+    height: 220px;
+    image-rendering: pixelated;
+    background: #fff;
+  }
+  .two-step__steps {
+    display: grid;
+    gap: 14px;
+  }
+  .two-step__codes {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+    gap: 6px 18px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-family: ui-monospace, monospace;
+  }
+  .two-step__secret {
+    font-family: ui-monospace, monospace;
+    letter-spacing: 0.08em;
+    word-break: break-all;
   }
 
   /* ---------- Sell to us ---------- */

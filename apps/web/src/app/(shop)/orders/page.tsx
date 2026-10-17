@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { MotionController } from "@/components/motion/MotionController";
 import { Orders } from "@/components/orders/Orders";
-import { getOrders, ORDER_FILTERS, ORDER_SORTS, queryOrders, type OrderFilter, type OrderSort } from "@/lib/orders";
+import { redirect } from "next/navigation";
+import { getMyOrders, ORDER_FILTERS, ORDER_SORTS, queryOrders, type OrderFilter, type OrderSort } from "@/lib/orders";
+import { getSession } from "@/lib/session";
 
 export const metadata: Metadata = {
   title: "Your orders — Marginalleya",
@@ -17,7 +19,13 @@ export default async function OrdersPage({ searchParams }: PageProps<"/orders">)
   const sort = (ORDER_SORTS.find((s) => s.key === first(sp.sort))?.key ?? "newest") as OrderSort;
   const q = (first(sp.q) ?? "").trim().slice(0, 80);
 
-  const [total, orders] = await Promise.all([getOrders().then((o) => o.length), queryOrders({ q, status, sort })]);
+  const session = await getSession();
+  if (!session) redirect("/sign-in?next=/orders");
+  const mine = await getMyOrders(session.token);
+  if (!mine) redirect("/sign-in?next=/orders");
+
+  const total = mine.length;
+  const orders = queryOrders(mine, { q, status, sort });
   const filtered = Boolean(q || status);
 
   /** Orders URL from the current search, filter and sort with some of them overridden. */

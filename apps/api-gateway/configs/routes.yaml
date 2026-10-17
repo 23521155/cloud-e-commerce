@@ -14,10 +14,13 @@ routes:
     breaker:
       enabled: true
 
+    # One bucket for sign-in and for the reader's own account (/me is read by the
+    # account and checkout pages), per user when signed in, else per IP. 10/min
+    # starved those reads; 60/min still bounds password guessing per IP.
     rate_limit:
-      requests: 10
+      requests: 60
       window: 1m
-      burst: 5
+      burst: 20
 
     auth_mode: optional
 

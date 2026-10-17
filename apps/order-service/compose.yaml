@@ -83,6 +83,9 @@ services:
       # VNPay cannot reach the IPN URL of a local stack, so the return
       # redirect records the payment. false wherever the IPN URL is public.
       VNPAY_CONFIRM_ON_RETURN: ${VNPAY_CONFIRM_ON_RETURN:-true}
+      # Azurite's well-known development account (infra/compose.yaml): the user service writes the
+      # user-email-verified queue there, and guest orders join the account whose email was confirmed.
+      STORAGE_CONNECTION_STRING: DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;QueueEndpoint=http://azurite:10001/devstoreaccount1;
     ports:
       - "${ORDER_PORT:-8084}:8084"
     healthcheck:

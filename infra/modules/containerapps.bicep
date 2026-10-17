@@ -30,6 +30,13 @@ param internalToken string
 @secure()
 param jwtSecret string
 
+@description('Encrypts the TOTP secrets of two-step sign-in.')
+@secure()
+param mfaEncryptionKey string
+
+@description('Storage account whose queues carry emails and account events.')
+param storageAccountName string
+
 @description('Azure Managed Redis that holds the web app\'s shared data cache.')
 param redisName string
 
@@ -44,6 +51,7 @@ var acrLoginServer = '${registryName}.azurecr.io'
 // Azure SQL only needs encrypt=true (no trustServerCertificate as with local containers).
 var catalogDbUrl = 'sqlserver://${sqlAdminLogin}:${sqlAdminPassword}@${sqlServerFqdn}:1433?database=catalog&encrypt=true'
 var orderDbUrl = 'sqlserver://${sqlAdminLogin}:${sqlAdminPassword}@${sqlServerFqdn}:1433?database=orders&encrypt=true'
+var usersDbUrl = 'sqlserver://${sqlAdminLogin}:${sqlAdminPassword}@${sqlServerFqdn}:1433?database=users&encrypt=true'
 
 // Built-in role that lets an identity pull images from a registry.
 var acrPullRoleId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
@@ -56,6 +64,13 @@ resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing =
   name: registryName
 }
 
+
+resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' existing = {
+  name: storageAccountName
+}
+
+// The queues' connection string, for the outbox relay and the order-service consumer.
+var storageConnectionString = 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${storageAccount.listKeys().keys[0].value};EndpointSuffix=${az.environment().suffixes.storage}'
 
 resource redis 'Microsoft.Cache/redisEnterprise@2025-07-01' existing = {
   name: redisName
@@ -278,6 +293,7 @@ resource order 'Microsoft.App/containerApps@2024-03-01' = {
         #disable-next-line use-secure-value-for-secure-inputs // built from the secure sqlAdminPassword
         { name: 'database-url', value: orderDbUrl }
         { name: 'internal-token', value: internalToken }
+        { name: 'storage-connection-string', value: storageConnectionString }
       ]
       ingress: {
         external: false // internal only: the gateway calls it
@@ -305,11 +321,67 @@ resource order 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'VNPAY_HASH_SECRET', value: '' }
             { name: 'VNPAY_RETURN_URL', value: 'https://${web.properties.configuration.ingress.fqdn}/checkout/vnpay-return' }
             { name: 'VNPAY_CONFIRM_ON_RETURN', value: 'false' }
+            // Reads user-email-verified: guest orders join the account whose email was confirmed.
+            { name: 'STORAGE_CONNECTION_STRING', secretRef: 'storage-connection-string' }
           ]
         }
       ]
       // Scaling to zero also stops the unpaid-order sweep (every minute), which lets the
       // free serverless orders database pause instead of using its monthly allowance in two days.
+      scale: scale
+    }
+  }
+}
+
+resource user 'Microsoft.App/containerApps@2024-03-01' = {
+  name: 'user-service'
+  location: location
+  identity: identity
+  dependsOn: [
+    acrPull
+  ]
+  properties: {
+    environmentId: environment.id
+    workloadProfileName: 'Consumption'
+    configuration: {
+      registries: registries
+      secrets: [
+        #disable-next-line use-secure-value-for-secure-inputs // built from the secure sqlAdminPassword
+        { name: 'database-url', value: usersDbUrl }
+        { name: 'jwt-secret', value: jwtSecret }
+        { name: 'mfa-encryption-key', value: mfaEncryptionKey }
+        { name: 'storage-connection-string', value: storageConnectionString }
+      ]
+      ingress: {
+        external: false // internal only: the gateway calls it and sets the trusted X-User-* headers
+        targetPort: 8085
+        transport: 'http'
+      }
+    }
+    template: {
+      containers: [
+        {
+          name: 'user-service'
+          image: '${acrLoginServer}/user-service:${imageTag}'
+          resources: goResources
+          env: [
+            { name: 'APP_NAME', value: 'user-service' }
+            { name: 'PORT', value: '8085' }
+            { name: 'GIN_MODE', value: 'release' }
+            { name: 'DATABASE_URL', secretRef: 'database-url' }
+            // Signs the access tokens the gateway verifies: same secret and issuer.
+            { name: 'JWT_SECRET', secretRef: 'jwt-secret' }
+            { name: 'JWT_ISSUER', value: prefix }
+            { name: 'JWT_ACCESS_TTL', value: '15m' }
+            { name: 'JWT_REFRESH_TTL', value: '720h' } // a device stays signed in 30 days without use
+            { name: 'MFA_ENCRYPTION_KEY', secretRef: 'mfa-encryption-key' }
+            // The outbox relay writes the email-outbox and user-email-verified queues here.
+            { name: 'STORAGE_CONNECTION_STRING', secretRef: 'storage-connection-string' }
+            // For the links in emails.
+            { name: 'WEB_URL', value: 'https://${web.properties.configuration.ingress.fqdn}' }
+          ]
+        }
+      ]
       scale: scale
     }
   }
@@ -347,7 +419,7 @@ resource gateway 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'PORT', value: '8080' }
             { name: 'JWT_SECRET', secretRef: 'jwt-secret' }
             { name: 'JWT_ISSUER', value: prefix }
-            { name: 'USER_SERVICE', value: '' }
+            { name: 'USER_SERVICE', value: 'http://${user.name}' }
             { name: 'CATALOG_SERVICE', value: 'http://${catalog.name}' }
             { name: 'ORDER_SERVICE', value: 'http://${order.name}' }
             // Ranges Container Apps reserves for its own ingress and container network (workload profiles),

@@ -16,10 +16,15 @@ const idempotencyHeader = "Idempotency-Key"
 // maxBodyBytes bounds a request body; 20 books and an address fit easily.
 const maxBodyBytes = 64 << 10
 
+// userIDHeader is the signed-in customer, set by the gateway from a verified
+// JWT and stripped from client requests. Absent for a guest.
+const userIDHeader = "X-User-ID"
+
 // creator is what the handler needs from the service; tests replace it with
 // a fake.
 type creator interface {
 	Create(ctx context.Context, in CreateInput) (Order, bool, error)
+	ListMine(ctx context.Context, userID string) ([]Order, error)
 }
 
 type Handler struct {
@@ -35,6 +40,27 @@ func NewHandler(service creator, log *zap.Logger) *Handler {
 // POST /api/orders arrives here as POST /.
 func (h *Handler) Register(api *gin.RouterGroup) {
 	api.POST("/", h.create)
+	api.GET("/", h.listMine)
+}
+
+// listMine answers GET /api/orders with the signed-in customer's orders.
+// Guests look an order up by code and email instead.
+func (h *Handler) listMine(c *gin.Context) {
+
+	userID := c.GetHeader(userIDHeader)
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "sign in required"})
+		return
+	}
+
+	orders, err := h.service.ListMine(c.Request.Context(), userID)
+	if err != nil {
+		h.log.Error("cannot list orders", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"items": orders})
 }
 
 // createRequest is the body of POST /api/orders. Fields are checked by the
@@ -88,6 +114,7 @@ func (h *Handler) create(c *gin.Context) {
 		PostalCode:    req.PostalCode,
 		Country:       req.Country,
 		ClientIP:      c.ClientIP(),
+		UserID:        optional(c.GetHeader(userIDHeader)),
 	})
 	if err != nil {
 		h.fail(c, err)
@@ -101,6 +128,14 @@ func (h *Handler) create(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, order)
+}
+
+// optional returns nil for an empty string.
+func optional(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 // fail turns a service error into a response. It is the one place that
