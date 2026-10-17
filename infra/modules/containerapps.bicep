@@ -46,6 +46,15 @@ param minReplicas int = 0
 @description('Upper bound for horizontal scaling.')
 param maxReplicas int = 3
 
+// Before the first deploy with a domain, its DNS must point here and the environment must hold the
+// certificates (a managed certificate is only issued for a hostname already on the app):
+//   A     @          -> the environment's static IP      TXT asuid     -> web's customDomainVerificationId
+//   CNAME www        -> web's *.azurecontainerapps.io    TXT asuid.www -> the same id
+// then once per environment: az containerapp hostname add, and az containerapp env certificate create
+// with the names below (mc-<host with dashes>). Later deploys keep them.
+@description('The shop\'s own domain; www. is served too. Empty: no custom domain.')
+param customDomain string = ''
+
 var acrLoginServer = '${registryName}.azurecr.io'
 
 // Azure SQL only needs encrypt=true (no trustServerCertificate as with local containers).
@@ -235,6 +244,22 @@ resource catalog 'Microsoft.App/containerApps@2024-03-01' = {
   }
 }
 
+// The apex is validated over HTTP (it has an A record, not a CNAME), www by its CNAME.
+var webHostnames = empty(customDomain) ? [] : [customDomain, 'www.${customDomain}']
+
+resource webCertificates 'Microsoft.App/managedEnvironments/managedCertificates@2024-03-01' = [for host in webHostnames: {
+  parent: environment
+  name: 'mc-${replace(host, '.', '-')}'
+  location: location
+  properties: {
+    subjectName: host
+    domainControlValidation: host == customDomain ? 'HTTP' : 'CNAME'
+  }
+}]
+
+// The address in emails and the Google callback: the own domain once there is one.
+var webUrl = empty(customDomain) ? 'https://${web.properties.configuration.ingress.fqdn}' : 'https://${customDomain}'
+
 resource web 'Microsoft.App/containerApps@2024-03-01' = {
   name: 'web'
   location: location
@@ -254,6 +279,11 @@ resource web 'Microsoft.App/containerApps@2024-03-01' = {
         external: true
         targetPort: 3000
         transport: 'auto'
+        customDomains: [for (host, i) in webHostnames: {
+          name: host
+          bindingType: 'SniEnabled'
+          certificateId: webCertificates[i].id
+        }]
       }
     }
     template: {
@@ -378,7 +408,7 @@ resource user 'Microsoft.App/containerApps@2024-03-01' = {
             // The outbox relay writes the email-outbox and user-email-verified queues here.
             { name: 'STORAGE_CONNECTION_STRING', secretRef: 'storage-connection-string' }
             // For the links in emails.
-            { name: 'WEB_URL', value: 'https://${web.properties.configuration.ingress.fqdn}' }
+            { name: 'WEB_URL', value: webUrl }
           ]
         }
       ]

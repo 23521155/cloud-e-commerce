@@ -207,6 +207,7 @@ jobs:
                internalToken='${{ secrets.INTERNAL_TOKEN }}' \
                jwtSecret='${{ secrets.JWT_SECRET }}' \
                mfaEncryptionKey='${{ secrets.MFA_ENCRYPTION_KEY }}' \
+               customDomain='${{ vars.CUSTOM_DOMAIN }}' \
             -o none
 
       # Apps already exist and Bicep was skipped: only move each app to the new image (new revision).
