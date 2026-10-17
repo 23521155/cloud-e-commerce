@@ -216,6 +216,14 @@ export function AuthPage({
                 {sw.link}
               </Link>
             </p>
+            {mode === "sign-in" && (
+              <p className="auth__switch">
+                Ordered as a guest?{" "}
+                <Link href="/orders" className="under-hover ml-1">
+                  Find your order
+                </Link>
+              </p>
+            )}
           </div>
         </section>
       </div>

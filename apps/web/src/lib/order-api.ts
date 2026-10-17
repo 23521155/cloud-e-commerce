@@ -107,6 +107,32 @@ export type MyOrdersResult =
   | { ok: false; reason: "signed-out" }
   | { ok: false; reason: "failed" };
 
+export type LookupResult =
+  | { ok: true; order: PlacedOrder }
+  /** No order has this code and email (the service gives one answer for both). */
+  | { ok: false; reason: "not-found" }
+  | { ok: false; reason: "failed" };
+
+/** POST /api/orders/lookup: a guest's order by its code and the email it was placed with. */
+export async function lookupOrder(code: string, email: string): Promise<LookupResult> {
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/lookup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(await forwardedFor()) },
+      body: JSON.stringify({ code, email }),
+      cache: "no-store",
+    });
+  } catch {
+    return { ok: false, reason: "failed" };
+  }
+
+  if (res.ok) return { ok: true, order: (await res.json()) as PlacedOrder };
+  if (res.status === 404 || res.status === 400) return { ok: false, reason: "not-found" };
+
+  return { ok: false, reason: "failed" };
+}
+
 /** GET /api/orders: the signed-in reader's orders, newest first. */
 export async function listMyOrders(accessToken: string): Promise<MyOrdersResult> {
   let res: Response;

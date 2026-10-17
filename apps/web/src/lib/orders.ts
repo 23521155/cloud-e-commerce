@@ -1,6 +1,6 @@
 // A reader's order history, from order-service. Every line is a single copy.
 import { getBooks, type Book } from "@/lib/catalogue";
-import { listMyOrders, type PlacedOrder } from "@/lib/order-api";
+import { listMyOrders, lookupOrder, type PlacedOrder } from "@/lib/order-api";
 import type { PaymentMethodId } from "@/lib/payment";
 
 export type OrderStatus = "placed" | "paid" | "packed" | "shipped" | "delivered" | "cancelled";
@@ -53,10 +53,27 @@ export async function getMyOrders(accessToken: string): Promise<Order[] | null> 
     if (placed.reason === "signed-out") return null;
     throw new Error("Your orders could not be loaded right now.");
   }
+  return toOrders(placed.orders);
+}
 
-  const books = new Map((await getBooks(placed.orders.flatMap((o) => o.items.map((i) => i.slug)))).map((b) => [b.slug, b]));
+/**
+ * A guest's order by its code and the email it was placed with, or null when none matches both.
+ * Throws when the order service cannot be reached.
+ */
+export async function getGuestOrder(code: string, email: string): Promise<Order | null> {
+  const found = await lookupOrder(code, email);
+  if (!found.ok) {
+    if (found.reason === "not-found") return null;
+    throw new Error("Your order could not be loaded right now.");
+  }
+  return (await toOrders([found.order]))[0];
+}
 
-  return placed.orders.map((o) => ({
+/** Orders as the reader sees them: books from the catalogue for their details, with the price paid. */
+async function toOrders(placed: PlacedOrder[]): Promise<Order[]> {
+  const books = new Map((await getBooks(placed.flatMap((o) => o.items.map((i) => i.slug)))).map((b) => [b.slug, b]));
+
+  return placed.map((o) => ({
     id: o.code,
     placed: o.createdAt,
     status: toStatus(o),
