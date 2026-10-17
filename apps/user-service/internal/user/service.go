@@ -66,6 +66,7 @@ type store interface {
 	verificationStore
 	resetStore
 	mfaStore
+	identityStore
 }
 
 // issuer signs access tokens; *token.Issuer outside tests.
@@ -87,6 +88,9 @@ type Service struct {
 	// box keeps TOTP secrets encrypted; nil turns two-step sign-in off.
 	box sealer
 
+	// google signs readers in with Google; nil turns it off.
+	google googleAuth
+
 	// now is time.Now outside tests.
 	now func() time.Time
 }
@@ -102,10 +106,13 @@ type Options struct {
 
 	// Box encrypts TOTP secrets. Nil: two-step sign-in cannot be set up.
 	Box sealer
+
+	// Google is the Google OAuth client. Nil: Google sign-in is off.
+	Google googleAuth
 }
 
 func NewService(store store, tokens issuer, o Options) *Service {
-	return &Service{store: store, tokens: tokens, refreshTTL: o.RefreshTTL, webURL: o.WebURL, box: o.Box, now: time.Now}
+	return &Service{store: store, tokens: tokens, refreshTTL: o.RefreshTTL, webURL: o.WebURL, box: o.Box, google: o.Google, now: time.Now}
 }
 
 // RegisterInput is a new account as the user typed it.

@@ -11,6 +11,7 @@ import (
 
 	"github.com/fizzisme/user-service/internal/config"
 	"github.com/fizzisme/user-service/internal/database"
+	"github.com/fizzisme/user-service/internal/google"
 	"github.com/fizzisme/user-service/internal/logger"
 	"github.com/fizzisme/user-service/internal/outbox"
 	"github.com/fizzisme/user-service/internal/router"
@@ -84,6 +85,16 @@ func main() {
 			)
 		}
 		options.Box = box
+	}
+
+	if cfg.GoogleClientID == "" || cfg.GoogleClientSecret == "" {
+		logger.Log.Warn("GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET is not set: Google sign-in is off")
+	} else {
+		options.Google = google.New(google.Config{
+			ClientID:     cfg.GoogleClientID,
+			ClientSecret: cfg.GoogleClientSecret,
+			RedirectURL:  cfg.GoogleRedirectURL,
+		})
 	}
 
 	userHandler := user.NewHandler(user.NewService(user.NewRepository(db), tokens, options), logger.Log)

@@ -47,8 +47,13 @@ func hashPassword(password string) (string, error) {
 }
 
 // verifyPassword reports whether password matches a hash written by
-// hashPassword, using the parameters stored in the hash.
+// hashPassword, using the parameters stored in the hash. An account made
+// with Google has no password (an empty hash), which no password matches.
 func verifyPassword(password, encoded string) (bool, error) {
+
+	if encoded == "" {
+		return false, nil
+	}
 
 	parts := strings.Split(encoded, "$")
 	if len(parts) != 6 || parts[1] != "argon2id" {

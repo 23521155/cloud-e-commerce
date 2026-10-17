@@ -145,6 +145,95 @@ func (r *Repository) findOne(ctx context.Context, query string, args ...any) (Us
 	return u, err
 }
 
+// FindByIdentity returns the account a provider's account is linked to, or
+// ErrNotFound.
+func (r *Repository) FindByIdentity(ctx context.Context, provider, subject string) (User, error) {
+	return r.findOne(ctx, `
+SELECT `+userColumns+` FROM users
+WHERE id = (SELECT user_id FROM user_identities WHERE provider = @provider AND subject = @subject)`,
+		sql.Named("provider", provider), sql.Named("subject", subject))
+}
+
+// CreateWithIdentity inserts u, its email already confirmed by the provider,
+// linked to the provider's account, with the outbox messages, in one
+// transaction. A taken email gives ErrEmailTaken.
+func (r *Repository) CreateWithIdentity(ctx context.Context, u User, id Identity, messages ...outbox.Message) (User, error) {
+
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return User{}, err
+	}
+	defer tx.Rollback()
+
+	var created User
+	err = tx.GetContext(ctx, &created, `
+INSERT INTO users (id, email, password_hash, name, role, email_verified_at)
+OUTPUT `+outputColumns("INSERTED")+`
+VALUES (@p1, @p2, @p3, @p4, @p5, SYSUTCDATETIME())`,
+		u.ID, u.Email, u.PasswordHash, u.Name, u.Role,
+	)
+	if isUniqueViolation(err) {
+		return User{}, ErrEmailTaken
+	}
+	if err != nil {
+		return User{}, err
+	}
+
+	if err := insertIdentity(ctx, tx, created.ID, id); err != nil {
+		return User{}, err
+	}
+	if err := outbox.Add(ctx, tx, messages...); err != nil {
+		return User{}, err
+	}
+
+	return created, tx.Commit()
+}
+
+// LinkIdentity links a provider's account to the account with userID and
+// confirms its email (the provider has), with the outbox messages events
+// gives for the updated account, in one transaction.
+func (r *Repository) LinkIdentity(ctx context.Context, userID string, id Identity, events func(User) ([]outbox.Message, error)) (User, error) {
+
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return User{}, err
+	}
+	defer tx.Rollback()
+
+	if err := insertIdentity(ctx, tx, userID, id); err != nil {
+		return User{}, err
+	}
+
+	var u User
+	err = tx.GetContext(ctx, &u, `
+UPDATE users SET email_verified_at = COALESCE(email_verified_at, SYSUTCDATETIME()), updated_at = SYSUTCDATETIME()
+OUTPUT `+outputColumns("INSERTED")+`
+WHERE id = @id`, sql.Named("id", userID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return User{}, ErrNotFound
+	}
+	if err != nil {
+		return User{}, err
+	}
+
+	messages, err := events(u)
+	if err != nil {
+		return User{}, err
+	}
+	if err := outbox.Add(ctx, tx, messages...); err != nil {
+		return User{}, err
+	}
+
+	return u, tx.Commit()
+}
+
+func insertIdentity(ctx context.Context, tx *sqlx.Tx, userID string, id Identity) error {
+	_, err := tx.ExecContext(ctx, `
+INSERT INTO user_identities (provider, subject, user_id) VALUES (@provider, @subject, @user_id)`,
+		sql.Named("provider", id.Provider), sql.Named("subject", id.Subject), sql.Named("user_id", userID))
+	return err
+}
+
 // isUniqueViolation reports whether err is SQL Server refusing a duplicate
 // key. The only unique key a client can collide on is the email.
 func isUniqueViolation(err error) bool {

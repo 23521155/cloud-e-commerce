@@ -78,6 +78,9 @@ services:
       MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY:-ZGV2LW9ubHktbWZhLWtleS0zMi1ieXRlcy1sb25nISE=}
       # The web dev server, for the links in emails.
       WEB_URL: ${WEB_URL:-http://localhost:3000}
+      # Google sign-in, from a .env next to the compose file you run (never committed); empty turns it off.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       # Azurite's well-known development account (infra/compose.yaml); the outbox relay writes the
       # email-outbox queue there and the sendEmail Function reads it.
       STORAGE_CONNECTION_STRING: DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;QueueEndpoint=http://azurite:10001/devstoreaccount1;
