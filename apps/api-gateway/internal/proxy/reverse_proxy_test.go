@@ -7,15 +7,15 @@ import (
 	"testing"
 	"time"
 	"github.com/fizzisme/api-gateway/internal/logger"
+	"github.com/fizzisme/api-gateway/internal/resilience"
+	"go.uber.org/zap"
 )
 
 func setupLogger(t *testing.T) {
 	t.Helper()
 
 	if logger.Log == nil {
-		if err := logger.Init(); err != nil {
-			t.Fatalf("init logger: %v", err)
-		}
+		logger.Log = zap.NewNop()
 	}
 }
 
@@ -41,6 +41,12 @@ func TestForwardRequest(t *testing.T) {
 		auth.URL,
 		"/auth",
 		5*time.Second,
+		resilience.NewBreaker("auth"),
+		&resilience.RetryConfig{MaxAttempts: 1},
+		"auth",
+		false,
+		0,
+		0,
 	)
 
 	if err != nil {
@@ -103,6 +109,12 @@ func TestRewritePath(t *testing.T) {
 		auth.URL,
 		"/api/v1/auth",
 		5*time.Second,
+		resilience.NewBreaker("auth"),
+		&resilience.RetryConfig{MaxAttempts: 1},
+		"auth",
+		false,
+		0,
+		0,
 	)
 
 	req := httptest.NewRequest(
@@ -152,6 +164,12 @@ func TestForwardHeaders(t *testing.T) {
 		auth.URL,
 		"/auth",
 		5*time.Second,
+		resilience.NewBreaker("auth"),
+		&resilience.RetryConfig{MaxAttempts: 1},
+		"auth",
+		false,
+		0,
+		0,
 	)
 
 	req := httptest.NewRequest(
@@ -174,10 +192,10 @@ func TestForwardHeaders(t *testing.T) {
 
 	body, _ := io.ReadAll(rr.Body)
 
-	if string(body) != "Bearer abc" {
+	if string(body) != "" {
 
 		t.Fatalf(
-			"header not forwarded",
+			"Authorization header should not be forwarded",
 		)
 
 	}
@@ -205,6 +223,12 @@ func TestForwardQuery(t *testing.T) {
 		auth.URL,
 		"/auth",
 		5*time.Second,
+		resilience.NewBreaker("auth"),
+		&resilience.RetryConfig{MaxAttempts: 1},
+		"auth",
+		false,
+		0,
+		0,
 	)
 
 	req := httptest.NewRequest(
@@ -255,6 +279,12 @@ func TestTimeout(t *testing.T) {
 		auth.URL,
 		"/auth",
 		1*time.Second,
+		resilience.NewBreaker("auth"),
+		&resilience.RetryConfig{MaxAttempts: 1},
+		"auth",
+		false,
+		0,
+		0,
 	)
 
 	if err != nil {
