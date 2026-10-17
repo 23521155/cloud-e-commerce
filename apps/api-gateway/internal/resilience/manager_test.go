@@ -4,9 +4,11 @@ import (
 	"net/http"
 	"errors"
 	"github.com/sony/gobreaker/v2"
+	"github.com/fizzisme/api-gateway/internal/metrics"
 )
 
 func TestBreaker_OpenAfterFailures(t *testing.T){
+	metrics.Init()
 	breaker := NewBreaker("auth")
 
 	for i := 0; i < 5; i++ {
