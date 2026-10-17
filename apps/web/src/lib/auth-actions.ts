@@ -79,13 +79,8 @@ export async function register(_prev: AuthFormState, formData: FormData): Promis
   if (password !== String(formData.get("confirm") ?? "")) return { ...keep, error: "The passwords do not match." };
 
   const result = await registerAccount({ name, email, password });
-  if (result.ok) {
-    // Signed in straight away; if that fails the account still exists, so send them to sign in.
-    const signedIn = await login(email, password);
-    if (!signedIn.ok) redirect("/sign-in?registered=1");
-    await startSession(signedIn.tokens);
-    redirect("/");
-  }
+  // Not signed in yet: the reader signs in with the new account on the next page.
+  if (result.ok) redirect("/sign-in?registered=1");
 
   switch (result.reason) {
     case "taken":
