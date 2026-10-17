@@ -27,6 +27,8 @@ one. Whether that holds up is still open.
 that the technology list is one to pick from and that deploying on a single platform is enough. That
 ruling is relayed from memory, not quoted.
 
+The lecturer has also allowed Go, which the list does not name.
+
 The same holds for the coursework. Asked whether `coursework.md`'s *"ASP.NET Core app"* was binding,
 he replied:
 
