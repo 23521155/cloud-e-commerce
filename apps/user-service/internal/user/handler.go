@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/fizzisme/user-service/internal/google"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
@@ -40,6 +41,8 @@ type accounts interface {
 	ConfirmTOTP(ctx context.Context, id, code string) ([]string, error)
 	DisableTOTP(ctx context.Context, id, password, code string) error
 	VerifyMFA(ctx context.Context, token, code string) (User, Tokens, error)
+	GoogleStart(ctx context.Context) (google.Start, error)
+	GoogleSignIn(ctx context.Context, code, verifier, nonce, device string) (User, Tokens, error)
 }
 
 type Handler struct {
@@ -69,6 +72,8 @@ func (h *Handler) Register(api *gin.RouterGroup) {
 	api.POST("/me/mfa/totp/confirm", h.confirmTOTP)
 	api.POST("/me/mfa/totp/disable", h.disableTOTP)
 	api.POST("/auth/mfa/verify", h.verifyMFA)
+	api.POST("/auth/google/start", h.googleStart)
+	api.POST("/auth/google", h.googleSignIn)
 }
 
 // registerRequest is the body of POST /auth/register. Fields are checked by
@@ -506,6 +511,55 @@ func (h *Handler) verifyMFA(c *gin.Context) {
 	c.JSON(http.StatusOK, newLoginResponse(u, tokens))
 }
 
+// googleStart answers POST /auth/google/start with the Google address to send
+// the reader to, and the state, nonce and verifier for the web to keep until
+// Google sends them back.
+func (h *Handler) googleStart(c *gin.Context) {
+
+	start, err := h.service.GoogleStart(c.Request.Context())
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, start)
+}
+
+// googleRequest is the body of POST /auth/google: what Google sent back, and
+// what the web kept from googleStart.
+type googleRequest struct {
+	Code         string `json:"code"`
+	CodeVerifier string `json:"codeVerifier"`
+	Nonce        string `json:"nonce"`
+}
+
+// googleSignIn answers POST /auth/google like a login: tokens, or the code
+// step when two-step sign-in is on.
+func (h *Handler) googleSignIn(c *gin.Context) {
+
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBodyBytes)
+
+	var req googleRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.Code == "" || req.CodeVerifier == "" || req.Nonce == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	u, tokens, err := h.service.GoogleSignIn(c.Request.Context(), req.Code, req.CodeVerifier, req.Nonce, c.GetHeader(deviceHeader))
+
+	var mfa *MFARequiredError
+	if errors.As(err, &mfa) {
+		c.JSON(http.StatusOK, gin.H{"mfaRequired": true, "mfaToken": mfa.Token, "mfaExpiresAt": mfa.ExpiresAt})
+		return
+	}
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, newLoginResponse(u, tokens))
+}
+
 // fail turns a service error into a response. It is the one place that
 // knows which error means which status.
 func (h *Handler) fail(c *gin.Context, err error) {
@@ -548,6 +602,16 @@ func (h *Handler) fail(c *gin.Context, err error) {
 
 	case errors.Is(err, ErrInvalidRefreshToken):
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "sign in required"})
+
+	case errors.Is(err, google.ErrRefused):
+		h.log.Warn("google sign-in refused", zap.Error(err))
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "google sign-in failed"})
+
+	case errors.Is(err, ErrGoogleEmailUnverified):
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+
+	case errors.Is(err, ErrGoogleOff):
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
 
 	default:
 		h.log.Error("cannot handle account request", zap.Error(err))

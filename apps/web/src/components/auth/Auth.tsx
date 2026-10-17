@@ -2,7 +2,7 @@ import Link from "next/link";
 import { CodeForm, PasswordField, RegisterForm, SignInForm, SubmitButton, TextField } from "@/components/auth/AuthClient";
 import { BookCover } from "@/components/ui/BookArt";
 import { verifyEmail } from "@/lib/account-actions";
-import { continueWithGoogle, requestReset, resetPassword } from "@/lib/auth-actions";
+import { requestReset, resetPassword } from "@/lib/auth-actions";
 
 export type AuthMode = "sign-in" | "register" | "forgot" | "verify" | "reset" | "code";
 
@@ -19,9 +19,11 @@ const RESET_ERROR: Record<NonNullable<ResetState["error"]>, string> = {
 /** The confirmation page's state: the token from the link, or how confirming went. */
 export type VerifyState = { token?: string; done?: boolean; error?: "invalid" | "failed" };
 
-function GoogleButton({ label }: { label: string }) {
+/** Sends the reader to Google (GET /auth/google); a new reader gets an account on the way back. */
+function GoogleButton({ label, next }: { label: string; next?: string }) {
   return (
-    <form action={continueWithGoogle}>
+    <form action="/auth/google" method="get">
+      {next && <input type="hidden" name="next" value={next} />}
       <button type="submit" className="auth__google">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.4h6.5a5.6 5.6 0 0 1-2.4 3.6v3h3.9c2.2-2.1 3.5-5.1 3.5-8.7z" />
@@ -48,7 +50,17 @@ function SignIn({ notice, next }: { notice?: string; next?: string }) {
     <>
       <SignInForm notice={notice} next={next} />
       <Divider />
-      <GoogleButton label="Continue with Google" />
+      <GoogleButton label="Continue with Google" next={next} />
+    </>
+  );
+}
+
+function Register() {
+  return (
+    <>
+      <RegisterForm />
+      <Divider />
+      <GoogleButton label="Sign up with Google" />
     </>
   );
 }
@@ -205,7 +217,7 @@ export function AuthPage({
           </div>
           <div className="auth__body">
             {mode === "sign-in" && <SignIn notice={notice} next={next} />}
-            {mode === "register" && <RegisterForm />}
+            {mode === "register" && <Register />}
             {mode === "forgot" && <ForgotForm sent={sent} />}
             {mode === "verify" && <VerifyForm {...verify} />}
             {mode === "reset" && <ResetForm {...reset} />}

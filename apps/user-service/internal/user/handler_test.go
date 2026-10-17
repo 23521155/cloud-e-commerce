@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fizzisme/user-service/internal/google"
 	"github.com/fizzisme/user-service/internal/token"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -33,6 +34,18 @@ type fakeAccounts struct {
 	gotDevice  string
 	gotRefresh string
 	gotNewPass string
+
+	start                           google.Start
+	gotCode, gotVerifier, gotNonce string
+}
+
+func (f *fakeAccounts) GoogleStart(ctx context.Context) (google.Start, error) {
+	return f.start, f.err
+}
+
+func (f *fakeAccounts) GoogleSignIn(ctx context.Context, code, verifier, nonce, device string) (User, Tokens, error) {
+	f.gotCode, f.gotVerifier, f.gotNonce, f.gotDevice = code, verifier, nonce, device
+	return f.user, f.tokens, f.err
 }
 
 func (f *fakeAccounts) Register(ctx context.Context, in RegisterInput) (User, error) {
@@ -128,6 +141,71 @@ func send(t *testing.T, svc accounts, method, path, body string, headers map[str
 	r.ServeHTTP(w, req)
 
 	return w
+}
+
+func TestGoogleStartHandler(t *testing.T) {
+
+	svc := &fakeAccounts{start: google.Start{URL: "https://accounts.google.com/o/oauth2/auth?x", State: "s", Nonce: "n", Verifier: "v"}}
+
+	w := send(t, svc, http.MethodPost, "/auth/google/start", "", nil)
+
+	var got google.Start
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || w.Code != http.StatusOK || got != svc.start {
+		t.Errorf("status %d, body %s", w.Code, w.Body)
+	}
+
+	if w := send(t, &fakeAccounts{err: ErrGoogleOff}, http.MethodPost, "/auth/google/start", "", nil); w.Code != http.StatusServiceUnavailable {
+		t.Errorf("google off: status = %d, want 503", w.Code)
+	}
+}
+
+func TestGoogleSignInHandler(t *testing.T) {
+
+	svc := &fakeAccounts{user: User{ID: "u1", Email: "reader@example.com"}, tokens: Tokens{Refresh: "r1"}}
+
+	w := send(t, svc, http.MethodPost, "/auth/google", `{"code":"c","codeVerifier":"v","nonce":"n"}`, map[string]string{deviceHeader: "Chrome on Windows"})
+
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"refreshToken":"r1"`) {
+		t.Fatalf("status %d, body %s", w.Code, w.Body)
+	}
+	if svc.gotCode != "c" || svc.gotVerifier != "v" || svc.gotNonce != "n" || svc.gotDevice != "Chrome on Windows" {
+		t.Errorf("got %q %q %q %q", svc.gotCode, svc.gotVerifier, svc.gotNonce, svc.gotDevice)
+	}
+}
+
+func TestGoogleSignInHandlerAsksForTheCode(t *testing.T) {
+
+	w := send(t, &fakeAccounts{err: &MFARequiredError{Token: "m1", ExpiresAt: time.Now()}}, http.MethodPost, "/auth/google", `{"code":"c","codeVerifier":"v","nonce":"n"}`, nil)
+
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"mfaRequired":true`) || strings.Contains(w.Body.String(), "accessToken") {
+		t.Errorf("status %d, body %s", w.Code, w.Body)
+	}
+}
+
+func TestGoogleSignInHandlerErrors(t *testing.T) {
+
+	for _, body := range []string{"", `{"code":"c","codeVerifier":"v"}`, `{"code":"","codeVerifier":"v","nonce":"n"}`} {
+		svc := &fakeAccounts{}
+		if w := send(t, svc, http.MethodPost, "/auth/google", body, nil); w.Code != http.StatusBadRequest || svc.gotCode != "" {
+			t.Errorf("body %q: status = %d, want 400", body, w.Code)
+		}
+	}
+
+	tests := []struct {
+		err  error
+		want int
+	}{
+		{fmt.Errorf("%w: invalid_grant", google.ErrRefused), http.StatusUnauthorized},
+		{ErrGoogleEmailUnverified, http.StatusForbidden},
+		{ErrGoogleOff, http.StatusServiceUnavailable},
+		{errors.New("dial tcp: i/o timeout"), http.StatusInternalServerError},
+	}
+	for _, tt := range tests {
+		w := send(t, &fakeAccounts{err: tt.err}, http.MethodPost, "/auth/google", `{"code":"c","codeVerifier":"v","nonce":"n"}`, nil)
+		if w.Code != tt.want || strings.Contains(w.Body.String(), "invalid_grant") || strings.Contains(w.Body.String(), "dial tcp") {
+			t.Errorf("%v: status %d, body %s", tt.err, w.Code, w.Body)
+		}
+	}
 }
 
 // postRegister sends body to POST /auth/register and returns the response.

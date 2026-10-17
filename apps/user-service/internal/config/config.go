@@ -42,6 +42,15 @@ type Config struct {
 	// carry the outbox messages (Azurite locally). Empty: messages wait in
 	// the outbox table.
 	StorageConnectionString string
+
+	// GoogleClientID and GoogleClientSecret are the OAuth client made in the
+	// Google Cloud console. Empty: Google sign-in is off.
+	GoogleClientID     string
+	GoogleClientSecret string
+
+	// GoogleRedirectURL is the web's callback Google sends readers back to;
+	// it must be listed on the OAuth client. Defaults to WebURL's.
+	GoogleRedirectURL string
 }
 
 // Load reads environment variables (via a .env file) into a Config.
@@ -69,7 +78,12 @@ func Load() (*Config, error) {
 		StorageConnectionString: os.Getenv("STORAGE_CONNECTION_STRING"),
 
 		MFAEncryptionKey: os.Getenv("MFA_ENCRYPTION_KEY"),
+
+		GoogleClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
+		GoogleClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
 	}
+
+	cfg.GoogleRedirectURL = getEnv("GOOGLE_REDIRECT_URL", cfg.WebURL+"/auth/google/callback")
 
 	ttl, err := time.ParseDuration(getEnv("JWT_ACCESS_TTL", "15m"))
 	if err != nil {

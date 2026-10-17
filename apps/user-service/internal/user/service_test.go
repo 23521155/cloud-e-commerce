@@ -31,6 +31,8 @@ type fakeStore struct {
 
 	challenges []*MFAChallenge
 	recovery   map[string]bool // code hash -> used
+
+	identities map[Identity]string // -> email of the linked account
 }
 
 func (f *fakeStore) CreateRefreshToken(ctx context.Context, t RefreshToken) error {

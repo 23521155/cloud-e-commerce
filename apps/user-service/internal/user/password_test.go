@@ -44,7 +44,6 @@ func TestHashPasswordSaltsEachHash(t *testing.T) {
 func TestVerifyPasswordRejectsMalformedHash(t *testing.T) {
 
 	for _, hash := range []string{
-		"",
 		"plain-text",
 		"$2a$10$abcdefghijklmnopqrstuv", // bcrypt
 		"$argon2id$v=19$m=19456,t=2,p=1$***$***",
@@ -52,6 +51,16 @@ func TestVerifyPasswordRejectsMalformedHash(t *testing.T) {
 	} {
 		if _, err := verifyPassword("anything", hash); !errors.Is(err, errMalformedHash) {
 			t.Errorf("verifyPassword(%q) error = %v, want errMalformedHash", hash, err)
+		}
+	}
+}
+
+// An account made with Google has no password: nothing matches, not an error.
+func TestVerifyPasswordWithoutAPassword(t *testing.T) {
+
+	for _, password := range []string{"", "anything"} {
+		if ok, err := verifyPassword(password, ""); ok || err != nil {
+			t.Errorf("verifyPassword(%q, \"\") = %v, %v; want false, nil", password, ok, err)
 		}
 	}
 }

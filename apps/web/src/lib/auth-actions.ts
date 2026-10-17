@@ -1,7 +1,7 @@
 "use server";
 
-// Google sign-in is still mock: it only redirects. Credentials arrive in the POST body and are never
-// stored, logged or put in a URL.
+// Credentials arrive in the POST body and are never stored, logged or put in a URL. Google sign-in
+// is two route handlers instead (app/auth/google).
 import { redirect } from "next/navigation";
 import { codeStepToken, endCodeStep, endSession, getRefreshToken, startCodeStep, startSession } from "@/lib/session";
 import { login, logout, registerAccount, requestPasswordReset, resetPassword as setNewPassword, verifyMfa } from "@/lib/user-api";
@@ -100,10 +100,6 @@ export async function signOut() {
   const refreshToken = await getRefreshToken();
   if (refreshToken) await logout(refreshToken);
   await endSession();
-  redirect("/");
-}
-
-export async function continueWithGoogle() {
   redirect("/");
 }
 

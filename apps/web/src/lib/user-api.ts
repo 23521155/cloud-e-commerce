@@ -104,6 +104,62 @@ export async function login(email: string, password: string): Promise<LoginResul
   return { ok: false, reason: "failed" };
 }
 
+/** A Google sign-in about to leave: where to send the reader, and what to keep until they come back. */
+export type GoogleStart = { url: string; state: string; nonce: string; verifier: string };
+
+export type GoogleStartResult = { ok: true; start: GoogleStart } | { ok: false; reason: "off" | "failed" };
+
+/** POST /api/users/auth/google/start. */
+export async function googleStart(): Promise<GoogleStartResult> {
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/auth/google/start`, { method: "POST", headers: await forwardedFor(), cache: "no-store" });
+  } catch {
+    return { ok: false, reason: "failed" };
+  }
+
+  if (res.ok) return { ok: true, start: (await res.json()) as GoogleStart };
+  if (res.status === 503) return { ok: false, reason: "off" };
+
+  return { ok: false, reason: "failed" };
+}
+
+export type GoogleSignInResult =
+  | { ok: true; tokens: SessionTokens; account: Account }
+  /** The account asks for an authenticator code: send it with mfaToken. */
+  | { ok: false; reason: "mfa"; mfaToken: string; mfaExpiresAt: string }
+  /** Google did not sign the reader in (cancelled, expired or tampered with). */
+  | { ok: false; reason: "refused" }
+  /** Google has not confirmed the account's address. */
+  | { ok: false; reason: "unverified" }
+  | { ok: false; reason: "off" | "failed" };
+
+/** POST /api/users/auth/google: what Google sent back, with what googleStart made for this sign-in. */
+export async function googleSignIn(code: string, codeVerifier: string, nonce: string): Promise<GoogleSignInResult> {
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/auth/google`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(await visitorHeaders()) },
+      body: JSON.stringify({ code, codeVerifier, nonce }),
+      cache: "no-store",
+    });
+  } catch {
+    return { ok: false, reason: "failed" };
+  }
+
+  if (res.ok) {
+    const body = (await res.json()) as TokensBody | { mfaRequired: true; mfaToken: string; mfaExpiresAt: string };
+    if ("mfaRequired" in body) return { ok: false, reason: "mfa", mfaToken: body.mfaToken, mfaExpiresAt: body.mfaExpiresAt };
+    return { ok: true, tokens: tokensOf(body), account: body.user };
+  }
+  if (res.status === 401 || res.status === 400) return { ok: false, reason: "refused" };
+  if (res.status === 403) return { ok: false, reason: "unverified" };
+  if (res.status === 503) return { ok: false, reason: "off" };
+
+  return { ok: false, reason: "failed" };
+}
+
 export type MeResult =
   | { ok: true; account: Account }
   /** The token was refused: expired, or the account is gone. */
