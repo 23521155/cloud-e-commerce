@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { MotionController } from "@/components/motion/MotionController";
+import { GuestOrders } from "@/components/orders/GuestOrders";
 import { Orders } from "@/components/orders/Orders";
 import { redirect } from "next/navigation";
 import { getMyOrders, ORDER_FILTERS, ORDER_SORTS, queryOrders, type OrderFilter, type OrderSort } from "@/lib/orders";
@@ -20,7 +21,15 @@ export default async function OrdersPage({ searchParams }: PageProps<"/orders">)
   const q = (first(sp.q) ?? "").trim().slice(0, 80);
 
   const session = await getSession();
-  if (!session) redirect("/sign-in?next=/orders");
+  // Not signed in: look an order up by its number and email instead
+  if (!session) {
+    return (
+      <>
+        <MotionController />
+        <GuestOrders error={first(sp.error)} />
+      </>
+    );
+  }
   const mine = await getMyOrders(session.token);
   if (!mine) redirect("/sign-in?next=/orders");
 

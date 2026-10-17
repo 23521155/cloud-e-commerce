@@ -1008,6 +1008,17 @@
       linear-gradient(100deg, rgba(255,255,255,.1), rgba(0,0,0,.12)),
       linear-gradient(#a8542f, #8f3f22);
   }
+  /* "+ 24 more" / "Fewer": a chip that opens the rest of the subjects, in gold so it reads as a control */
+  .catalogue__more {
+    border: 0;
+    background: none;
+    color: var(--color-gold-300);
+    cursor: pointer;
+  }
+  .catalogue__more:focus-visible {
+    outline: 2px solid var(--color-gold-300);
+    outline-offset: 4px;
+  }
   .catalogue__grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));

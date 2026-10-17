@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { ClearBasket } from "@/components/basket/ClearBasket";
 import { DotButton } from "@/components/ui/DotButton";
 import { getPaymentMethod } from "@/lib/payment";
+import { getSession } from "@/lib/session";
 
 export const metadata: Metadata = {
   title: "Order received — Marginalleya",
@@ -18,6 +19,8 @@ export default async function ConfirmedPage({ searchParams }: PageProps<"/checko
   // Real orders (cash on delivery, or paid on VNPay) arrive with their code; the mocked methods have none
   const code = first(params.code);
   const placed = code !== undefined && ORDER_CODE.test(code);
+  // A signed-in reader's order is on their orders page; a guest keeps the code and email instead
+  const signedIn = (await getSession()) !== null;
 
   return (
     <section className="work basket" aria-labelledby="confirmed-title">
@@ -39,7 +42,9 @@ export default async function ConfirmedPage({ searchParams }: PageProps<"/checko
             <ClearBasket />
             <p className="m-0 mt-8 font-serif text-[clamp(1.6rem,3vw,2.6rem)] tabular-nums">Order {code}</p>
             <p className="m-0 mt-4 max-w-[44ch] text-[clamp(17px,1.3vw,21px)] leading-relaxed text-parchment-200">
-              Keep this number with the email you gave: you will need both to ask about your order.
+              {signedIn
+                ? "It is on your orders page now, where you can follow it until it reaches you."
+                : "Keep this number with the email you gave: you will need both to ask about your order."}
             </p>
           </>
         ) : (
@@ -52,7 +57,11 @@ export default async function ConfirmedPage({ searchParams }: PageProps<"/checko
           <DotButton href="/catalogue" variant="solid">
             Back to the shelves
           </DotButton>
-          <DotButton href="/cart">View basket</DotButton>
+          {placed ? (
+            <DotButton href="/orders">{signedIn ? "View your orders" : "Find your order"}</DotButton>
+          ) : (
+            <DotButton href="/cart">View basket</DotButton>
+          )}
         </div>
       </div>
     </section>

@@ -345,6 +345,37 @@ func (s *Service) ListMine(ctx context.Context, userID string) ([]Order, error) 
 	return s.store.ListByUser(ctx, userID, maxListed)
 }
 
+// Lookup returns the order with code for a guest who gives the email it was
+// placed with. A wrong email answers ErrNotFound like an unknown code, so the
+// form cannot be used to learn which codes exist. As in ListMine, an online
+// order that was never paid is not an order.
+func (s *Service) Lookup(ctx context.Context, code, email string) (Order, error) {
+
+	o, err := s.store.FindByCode(ctx, strings.ToUpper(strings.TrimSpace(code)))
+	if err != nil {
+		return Order{}, err
+	}
+
+	if !strings.EqualFold(o.Email, strings.TrimSpace(email)) || !placedForCustomer(o) {
+		return Order{}, ErrNotFound
+	}
+
+	return o, nil
+}
+
+// placedForCustomer reports whether the customer got the order: not an online
+// one still awaiting payment, or cancelled without being paid (the same rule
+// as Repository.ListByUser).
+func placedForCustomer(o Order) bool {
+	switch {
+	case o.Status == StatusAwaitingPayment:
+		return false
+	case o.Status == StatusCancelled && o.PaymentMethod != PaymentCOD && o.PaymentStatus == PaymentUnpaid:
+		return false
+	}
+	return true
+}
+
 // LinkGuestOrders gives a reader the orders placed as a guest with an email
 // address they have confirmed (internal/accountevents), and returns how many.
 // Orders that already belong to an account are left alone, so a repeated

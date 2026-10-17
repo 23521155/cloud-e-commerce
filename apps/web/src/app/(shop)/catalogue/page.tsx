@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Form from "next/form";
 import Link from "next/link";
 import { ScrollToShelf } from "@/components/catalogue/ScrollToShelf";
+import { SubjectFilter } from "@/components/catalogue/SubjectFilter";
 import { MotionController } from "@/components/motion/MotionController";
 import { BookPhoto } from "@/components/ui/BookArt";
 import { DotButton } from "@/components/ui/DotButton";
@@ -49,7 +50,10 @@ export default async function CataloguePage({ searchParams }: PageProps<"/catalo
   const page = Math.min(totalPages, wantedPage);
   // A page past the end shows the last one
   const books = page === wantedPage ? result.books : (await queryBooks({ subject, rare, sort, q, page })).books;
-  const shownSubjects = subjects.filter((s) => s.slug === subject || (s.slug !== "uncategorized" && s.bookCount >= MIN_SUBJECT_BOOKS));
+  // Best-stocked first: the subject row shows only the first few until the reader asks for the rest
+  const shownSubjects = subjects
+    .filter((s) => s.slug === subject || (s.slug !== "uncategorized" && s.bookCount >= MIN_SUBJECT_BOOKS))
+    .sort((a, b) => b.bookCount - a.bookCount);
 
   /** Build a catalogue URL from the current filters with some of them overridden. Changing a filter resets to page 1. */
   const href = (next: { subject?: string | null; rare?: boolean; sort?: string; page?: number; q?: string }) => {
@@ -95,28 +99,28 @@ export default async function CataloguePage({ searchParams }: PageProps<"/catalo
         </div>
 
         <nav className="catalogue__filters" aria-label="Filter the catalogue">
-          <ul className="catalogue__row" aria-label="Subject">
-            <li>
-              <Link href={href({ subject: null })} scroll={false} className={`catalogue__chip ${!subject ? "is-active" : ""}`} aria-current={!subject ? "true" : undefined}>
-                All subjects
-              </Link>
-            </li>
-            {shownSubjects.map((s) => (
-              <li key={s.slug}>
-                <Link href={href({ subject: s.slug })} scroll={false} className={`catalogue__chip ${subject === s.slug ? "is-active" : ""}`} aria-current={subject === s.slug ? "true" : undefined}>
-                  {s.name}
+          <SubjectFilter
+            chips={shownSubjects.map((s) => ({ slug: s.slug, name: s.name, href: href({ subject: s.slug }), active: subject === s.slug }))}
+            lead={
+              <li>
+                <Link href={href({ subject: null })} scroll={false} className={`catalogue__chip ${!subject ? "is-active" : ""}`} aria-current={!subject ? "true" : undefined}>
+                  All subjects
                 </Link>
               </li>
-            ))}
-            <li className="catalogue__sep" aria-hidden="true">
-              ❦
-            </li>
-            <li>
-              <Link href={href({ rare: !rare })} scroll={false} className={`catalogue__chip ${rare ? "is-active" : ""}`} aria-current={rare ? "true" : undefined}>
-                Rare only
-              </Link>
-            </li>
-          </ul>
+            }
+            trail={
+              <>
+                <li className="catalogue__sep" aria-hidden="true">
+                  ❦
+                </li>
+                <li>
+                  <Link href={href({ rare: !rare })} scroll={false} className={`catalogue__chip ${rare ? "is-active" : ""}`} aria-current={rare ? "true" : undefined}>
+                    Rare only
+                  </Link>
+                </li>
+              </>
+            }
+          />
 
           <ul className="catalogue__row catalogue__row--sort" aria-label="Sort">
             <li className="small-upper text-gold-400">Sort</li>

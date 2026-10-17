@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   title: "Sign in — Marginalleya",
 };
 
-/** The line above the form after registering (when signing in at once failed) or after a reset. */
+/** The line above the form after registering or after a reset. */
 function notice(sp: Record<string, string | string[] | undefined>): string | undefined {
   if (sp.reset === "1") return "Your new password is set. Sign in with it.";
   if (sp.mfa === "expired") return "That sign-in took too long or had too many wrong codes. Please sign in again.";
