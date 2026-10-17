@@ -85,6 +85,10 @@ var orderBy = map[string]string{
 	"year":       "b.year ASC, b.id DESC",
 }
 
+// availableFirst puts the books a reader can buy at the front of every sort:
+// reserved copies after them, sold ones last.
+const availableFirst = "CASE b.status WHEN N'AVAILABLE' THEN 0 WHEN N'RESERVED' THEN 1 ELSE 2 END, "
+
 // List returns one page of books, whatever their status, and the total number
 // of matches.
 func (r *Repository) List(ctx context.Context, f Filter) ([]Book, int, error) {
@@ -106,7 +110,7 @@ func (r *Repository) List(ctx context.Context, f Filter) ([]Book, int, error) {
 	page := max(f.Page, 1)
 
 	query := selectBook + where +
-		" ORDER BY " + order +
+		" ORDER BY " + availableFirst + order +
 		" OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY"
 
 	args = append(args,
