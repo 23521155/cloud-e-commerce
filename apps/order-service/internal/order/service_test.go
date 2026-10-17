@@ -333,6 +333,60 @@ func TestCreateSignedInBelongsToTheCustomer(t *testing.T) {
 	}
 }
 
+func TestLookup(t *testing.T) {
+
+	store := newFakeStore()
+	svc := newTestService(store, &fakeCatalog{books: twoBooks()})
+
+	placed, _, err := svc.Create(context.Background(), validInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The code as typed by hand: other case, spaces around it.
+	got, err := svc.Lookup(context.Background(), " "+strings.ToLower(placed.Code)+" ", strings.ToUpper(placed.Email))
+	if err != nil || got.Code != placed.Code {
+		t.Errorf("Lookup = %+v, %v; want %s", got, err, placed.Code)
+	}
+
+	for name, args := range map[string][2]string{
+		"wrong email":  {placed.Code, "someone@example.com"},
+		"unknown code": {"MA-000000", placed.Email},
+	} {
+		if _, err := svc.Lookup(context.Background(), args[0], args[1]); !errors.Is(err, ErrNotFound) {
+			t.Errorf("%s: err = %v, want ErrNotFound", name, err)
+		}
+	}
+}
+
+func TestLookupHidesUnpaidOnlineOrders(t *testing.T) {
+
+	tests := []struct {
+		name  string
+		order Order
+		found bool
+	}{
+		{"awaiting payment", Order{Status: StatusAwaitingPayment, PaymentMethod: PaymentVietQR, PaymentStatus: PaymentUnpaid}, false},
+		{"online, cancelled unpaid", Order{Status: StatusCancelled, PaymentMethod: PaymentCard, PaymentStatus: PaymentUnpaid}, false},
+		{"online, paid", Order{Status: StatusConfirmed, PaymentMethod: PaymentVietQR, PaymentStatus: PaymentPaid}, true},
+		{"cash on delivery, cancelled", Order{Status: StatusCancelled, PaymentMethod: PaymentCOD, PaymentStatus: PaymentUnpaid}, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := newFakeStore()
+			o := tt.order
+			o.Code, o.Email = "MA-048291", "guest@example.com"
+			store.orders["k"] = &o
+
+			_, err := newTestService(store, &fakeCatalog{}).Lookup(context.Background(), o.Code, o.Email)
+			if found := err == nil; found != tt.found {
+				t.Errorf("found = %v (err %v), want %v", found, err, tt.found)
+			}
+		})
+	}
+}
+
 func TestCreateCOD(t *testing.T) {
 
 	store, catalog := newFakeStore(), &fakeCatalog{books: twoBooks()}

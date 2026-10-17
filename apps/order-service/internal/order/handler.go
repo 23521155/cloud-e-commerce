@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/fizzisme/order-service/internal/catalogclient"
 	"github.com/gin-gonic/gin"
@@ -25,6 +26,7 @@ const userIDHeader = "X-User-ID"
 type creator interface {
 	Create(ctx context.Context, in CreateInput) (Order, bool, error)
 	ListMine(ctx context.Context, userID string) ([]Order, error)
+	Lookup(ctx context.Context, code, email string) (Order, error)
 }
 
 type Handler struct {
@@ -41,6 +43,39 @@ func NewHandler(service creator, log *zap.Logger) *Handler {
 func (h *Handler) Register(api *gin.RouterGroup) {
 	api.POST("/", h.create)
 	api.GET("/", h.listMine)
+	api.POST("/lookup", h.lookup)
+}
+
+// lookupRequest is the body of POST /api/orders/lookup. It is a POST so the
+// email stays out of URLs and access logs.
+type lookupRequest struct {
+	Code  string `json:"code"`
+	Email string `json:"email"`
+}
+
+// lookup answers POST /api/orders/lookup: a guest's order, found by its code
+// and the email it was placed with.
+func (h *Handler) lookup(c *gin.Context) {
+
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBodyBytes)
+
+	var req lookupRequest
+	if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.Code) == "" || strings.TrimSpace(req.Email) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "order code and email are required"})
+		return
+	}
+
+	order, err := h.service.Lookup(c.Request.Context(), req.Code, req.Email)
+	switch {
+	case errors.Is(err, ErrNotFound):
+		// One answer for an unknown code and a wrong email.
+		c.JSON(http.StatusNotFound, gin.H{"error": "no order with this code and email"})
+	case err != nil:
+		h.log.Error("cannot look up order", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+	default:
+		c.JSON(http.StatusOK, order)
+	}
 }
 
 // listMine answers GET /api/orders with the signed-in customer's orders.

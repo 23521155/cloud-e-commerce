@@ -25,6 +25,8 @@ type fakeCreator struct {
 
 	orders    []Order
 	gotUserID string
+
+	gotCode, gotEmail string
 }
 
 func (f *fakeCreator) Create(ctx context.Context, in CreateInput) (Order, bool, error) {
@@ -35,6 +37,11 @@ func (f *fakeCreator) Create(ctx context.Context, in CreateInput) (Order, bool, 
 func (f *fakeCreator) ListMine(ctx context.Context, userID string) ([]Order, error) {
 	f.gotUserID = userID
 	return f.orders, f.err
+}
+
+func (f *fakeCreator) Lookup(ctx context.Context, code, email string) (Order, error) {
+	f.gotCode, f.gotEmail = code, email
+	return f.order, f.err
 }
 
 const validBody = `{
@@ -185,6 +192,61 @@ func TestListMineHandlerHidesInternalErrors(t *testing.T) {
 
 	w := getMine(t, &fakeCreator{err: errors.New("mssql: login failed for user sa")}, "u1")
 
+	if w.Code != http.StatusInternalServerError || strings.Contains(w.Body.String(), "mssql") {
+		t.Errorf("status %d, body %s", w.Code, w.Body)
+	}
+}
+
+// lookup sends body to POST /lookup and returns the response.
+func lookup(t *testing.T, svc creator, body string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	NewHandler(svc, zap.NewNop()).Register(r.Group(""))
+
+	req := httptest.NewRequest(http.MethodPost, "/lookup", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	return w
+}
+
+func TestLookupHandler(t *testing.T) {
+
+	svc := &fakeCreator{order: Order{Code: "MA-048291"}}
+
+	w := lookup(t, svc, `{"code": "MA-048291", "email": "guest@example.com"}`)
+
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"code":"MA-048291"`) {
+		t.Fatalf("status %d, body %s", w.Code, w.Body)
+	}
+	if svc.gotCode != "MA-048291" || svc.gotEmail != "guest@example.com" {
+		t.Errorf("looked up %q / %q", svc.gotCode, svc.gotEmail)
+	}
+}
+
+func TestLookupHandlerNeedsCodeAndEmail(t *testing.T) {
+
+	for _, body := range []string{"", "not json", `{"code": "MA-048291"}`, `{"email": "guest@example.com"}`, `{"code": " ", "email": " "}`} {
+		svc := &fakeCreator{}
+		if w := lookup(t, svc, body); w.Code != http.StatusBadRequest {
+			t.Errorf("body %q: status = %d, want 400", body, w.Code)
+		}
+		if svc.gotCode != "" {
+			t.Errorf("body %q reached the service", body)
+		}
+	}
+}
+
+func TestLookupHandlerErrors(t *testing.T) {
+
+	if w := lookup(t, &fakeCreator{err: ErrNotFound}, `{"code": "MA-048291", "email": "a@b.co"}`); w.Code != http.StatusNotFound {
+		t.Errorf("not found: status = %d, want 404", w.Code)
+	}
+
+	w := lookup(t, &fakeCreator{err: errors.New("mssql: login failed for user sa")}, `{"code": "MA-048291", "email": "a@b.co"}`)
 	if w.Code != http.StatusInternalServerError || strings.Contains(w.Body.String(), "mssql") {
 		t.Errorf("status %d, body %s", w.Code, w.Body)
 	}
