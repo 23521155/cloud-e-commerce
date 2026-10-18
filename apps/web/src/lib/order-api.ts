@@ -37,6 +37,21 @@ export type PlacedOrder = {
   items: { slug: string; title: string; priceVnd: number }[];
   /** VNPay's page for an order awaiting payment; absent once its payment window has closed. */
   paymentUrl?: string;
+  /** When the copies are released if the order is still unpaid. */
+  expiresAt?: string;
+  /** How to pay a VietQR order by bank transfer; absent once its payment window has closed. */
+  transfer?: TransferInstructions;
+};
+
+/** What a reader needs to pay one order by bank transfer: the QR image, and the same details by hand. */
+export type TransferInstructions = {
+  imageUrl: string;
+  bank: string;
+  accountNo: string;
+  accountName: string;
+  amountVnd: number;
+  /** The transfer text. Must be typed exactly: the order is found by it. */
+  content: string;
 };
 
 export type PlaceOrderResult =

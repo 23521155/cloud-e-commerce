@@ -42,6 +42,8 @@ type Config struct {
 
 	VNPay VNPay
 
+	SePay SePay
+
 	// StorageConnectionString is the Azure Storage account whose
 	// user-email-verified queue the user service writes (Azurite locally).
 	// Empty: guest orders are not linked to accounts.
@@ -67,6 +69,33 @@ type VNPay struct {
 // Enabled reports whether a VNPay account is configured.
 func (v VNPay) Enabled() bool {
 	return v.TmnCode != ""
+}
+
+// SePay is the bank account VietQR orders are paid into, and the SePay webhook
+// that reports the transfers. VietQR orders are paid by bank transfer while
+// SEPAY_API_KEY is set; without it they go through VNPay like a card.
+type SePay struct {
+	// APIKey is the key set on the SePay webhook. Never log it.
+	APIKey string
+
+	// Bank is the bank's short name in VietQR, e.g. BIDV.
+	Bank string
+
+	// AccountNo is the account the customer pays into. For BIDV, the virtual
+	// account (VA) SePay watches.
+	AccountNo string
+
+	// AccountName is the owner's name as the bank spells it.
+	AccountName string
+
+	// CodePrefix is how the order codes start, without the dash. It must be
+	// the prefix of the codes the service draws (MA-123456 is "MA").
+	CodePrefix string
+}
+
+// Enabled reports whether bank transfers are configured.
+func (s SePay) Enabled() bool {
+	return s.APIKey != ""
 }
 
 // Load reads environment variables (via a .env file) into a Config.
@@ -106,6 +135,20 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("VNPAY_TMN_CODE and VNPAY_HASH_SECRET must be set together")
 	}
 
+	sepay := SePay{
+		APIKey:      os.Getenv("SEPAY_API_KEY"),
+		Bank:        os.Getenv("SEPAY_BANK"),
+		AccountNo:   os.Getenv("SEPAY_ACCOUNT_NO"),
+		AccountName: os.Getenv("SEPAY_ACCOUNT_NAME"),
+		CodePrefix:  getEnv("SEPAY_CODE_PREFIX", "MA"),
+	}
+
+	// All four or none: a half-copied account would put a QR on the page that
+	// pays nobody, or a webhook nobody can check.
+	if set := countSet(sepay.APIKey, sepay.Bank, sepay.AccountNo, sepay.AccountName); set != 0 && set != 4 {
+		return nil, fmt.Errorf("SEPAY_API_KEY, SEPAY_BANK, SEPAY_ACCOUNT_NO and SEPAY_ACCOUNT_NAME must be set together")
+	}
+
 	cfg := &Config{
 		AppName: getEnv("APP_NAME", "order-service"),
 
@@ -124,9 +167,22 @@ func Load() (*Config, error) {
 		PaymentHold: time.Duration(holdMinutes) * time.Minute,
 
 		VNPay: vnpay,
+
+		SePay: sepay,
 	}
 
 	return cfg, nil
+}
+
+// countSet returns how many of values are not empty.
+func countSet(values ...string) int {
+	n := 0
+	for _, v := range values {
+		if v != "" {
+			n++
+		}
+	}
+	return n
 }
 
 // getEnv returns the value of key, or fallback when it is unset or empty.

@@ -15,6 +15,7 @@ import (
 	"github.com/fizzisme/order-service/internal/database"
 	"github.com/fizzisme/order-service/internal/logger"
 	"github.com/fizzisme/order-service/internal/order"
+	"github.com/fizzisme/order-service/internal/payment/sepay"
 	"github.com/fizzisme/order-service/internal/payment/vnpay"
 	"github.com/fizzisme/order-service/internal/router"
 	"go.uber.org/zap"
@@ -94,7 +95,34 @@ func main() {
 		logger.Log.Warn("VNPay is not configured, online payments are off")
 	}
 
+	// With a SePay account VietQR orders are paid by bank transfer to the
+	// shop's account, and the webhook route is mounted. Without one, VietQR
+	// goes through VNPay like a card.
+	var transfers *sepay.Client
+	if cfg.SePay.Enabled() {
+		transfers, err = sepay.New(sepay.Config{
+			APIKey:      cfg.SePay.APIKey,
+			Bank:        cfg.SePay.Bank,
+			AccountNo:   cfg.SePay.AccountNo,
+			AccountName: cfg.SePay.AccountName,
+			CodePrefix:  cfg.SePay.CodePrefix,
+		})
+		if err != nil {
+			logger.Log.Fatal(
+				"cannot create SePay client",
+				zap.Error(err),
+			)
+		}
+	} else {
+		logger.Log.Warn("SePay is not configured, VietQR orders are paid through VNPay")
+	}
+
 	service := order.NewService(order.NewRepository(db), catalog, payments, cfg.PaymentHold, logger.Log)
+
+	// Only when configured: a nil *sepay.Client in the interface would not be nil.
+	if transfers != nil {
+		service.WithTransfers(transfers)
+	}
 
 	// Cancels the online orders nobody paid in time and gives their books
 	// back. It runs even without VNPay: orders placed earlier may still wait.
@@ -123,6 +151,9 @@ func main() {
 	routes := []router.Registrar{order.NewHandler(service, logger.Log)}
 	if gateway != nil {
 		routes = append(routes, order.NewPaymentHandler(service, gateway, cfg.VNPay.ConfirmOnReturn, logger.Log))
+	}
+	if transfers != nil {
+		routes = append(routes, order.NewTransferHandler(service, transfers, logger.Log))
 	}
 
 	r := router.SetupRouter(db, routes...)

@@ -54,6 +54,19 @@ param googleClientId string = ''
 @secure()
 param googleClientSecret string = ''
 
+@description('Key of the SePay webhook. With the account below it turns on bank transfer for VietQR orders; any of them empty: VietQR stays on VNPay.')
+@secure()
+param sepayApiKey string = ''
+
+@description('Bank of the account VietQR orders are paid into, as VietQR names it.')
+param sepayBank string = 'BIDV'
+
+@description('The account the customer pays into. For BIDV, the virtual account (VA) SePay watches.')
+param sepayAccountNo string = ''
+
+@description('Owner of that account, as the bank spells it.')
+param sepayAccountName string = ''
+
 module network 'modules/network.bicep' = {
   name: 'network'
   params: {
@@ -147,6 +160,10 @@ module containerApps 'modules/containerapps.bicep' = if(deployApps) {
     mfaEncryptionKey: mfaEncryptionKey
     googleClientId: googleClientId
     googleClientSecret: googleClientSecret
+    sepayApiKey: sepayApiKey
+    sepayBank: sepayBank
+    sepayAccountNo: sepayAccountNo
+    sepayAccountName: sepayAccountName
     imageTag: imageTag
     redisName: redis.outputs.name
     storageAccountName: storage.outputs.name

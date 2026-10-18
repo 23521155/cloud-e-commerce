@@ -122,10 +122,14 @@ func New(target string,
     		pr.Out.URL.Path = "/"
 		}
 
-        // Drop the client's original Authorization header (raw JWT).
+        // Drop the client's original Authorization header when it carries a JWT.
     	// The backend should trust the gateway-verified identity
     	// headers below instead of re-parsing the token itself.
-        pr.Out.Header.Del("Authorization")
+        // Any other scheme (SePay's webhook sends "Apikey <key>") is not a gateway
+        // credential: the backend checks it itself, so it goes through.
+        if strings.HasPrefix(pr.In.Header.Get("Authorization"), "Bearer ") {
+            pr.Out.Header.Del("Authorization")
+        }
 
         // Forward identity/context set by upstream gateway middleware
         // (JWTAuth, RequestID) from the inbound request to the outbound

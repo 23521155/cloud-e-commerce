@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/fizzisme/order-service/internal/catalogclient"
+	"github.com/fizzisme/order-service/internal/payment/sepay"
 	"github.com/fizzisme/order-service/internal/payment/vnpay"
 	"go.uber.org/zap"
 )
@@ -93,6 +94,13 @@ type Payments interface {
 	BuildPayURL(r vnpay.PayRequest) (string, error)
 }
 
+// Transfers is what the service needs to take payment by bank transfer to the
+// shop's account. The real one is *sepay.Client; tests use a fake. Nil when
+// SePay is not configured.
+type Transfers interface {
+	Instructions(orderCode string, amountVND int64) (sepay.Instructions, error)
+}
+
 // Reserver is what the service needs from the catalogue. The real one is
 // *catalogclient.Client; tests use a fake.
 type Reserver interface {
@@ -104,15 +112,17 @@ type Reserver interface {
 var (
 	_ Store    = (*Repository)(nil)
 	_ Reserver = (*catalogclient.Client)(nil)
-	_ Payments = (*vnpay.Client)(nil)
+	_ Payments  = (*vnpay.Client)(nil)
+	_ Transfers = (*sepay.Client)(nil)
 )
 
 // Service places orders and records their payments.
 type Service struct {
-	store    Store
-	catalog  Reserver
-	payments Payments
-	log      *zap.Logger
+	store     Store
+	catalog   Reserver
+	payments  Payments
+	transfers Transfers
+	log       *zap.Logger
 
 	// hold is how long the books of an online order stay reserved.
 	hold time.Duration
@@ -122,6 +132,19 @@ type Service struct {
 // configured; online payment methods are then refused.
 func NewService(store Store, catalog Reserver, payments Payments, hold time.Duration, log *zap.Logger) *Service {
 	return &Service{store: store, catalog: catalog, payments: payments, hold: hold, log: log}
+}
+
+// WithTransfers makes VietQR orders payable by bank transfer to the shop's
+// account instead of on the payment gateway's page. Without it, VietQR goes
+// through the gateway like a card.
+func (s *Service) WithTransfers(t Transfers) *Service {
+	s.transfers = t
+	return s
+}
+
+// paidByTransfer reports whether orders of method are paid by bank transfer.
+func (s *Service) paidByTransfer(method string) bool {
+	return method == PaymentVietQR && s.transfers != nil
 }
 
 // CreateInput is a checkout as the customer filled it in. It carries no
@@ -161,8 +184,9 @@ func isOnline(method string) bool {
 //
 // Cash on delivery is CONFIRMED and its books are sold at once. An online
 // order is AWAITING_PAYMENT: its books stay reserved for s.hold, nothing is
-// sold, and the order carries the PaymentURL to pay it on; ConfirmPayment
-// finishes it.
+// sold, and the order carries the PaymentURL to pay it on (or, for VietQR
+// when WithTransfers is set, the Transfer instructions); ConfirmPayment or
+// ConfirmTransfer finishes it.
 //
 // The steps, in order:
 //
@@ -180,8 +204,8 @@ func isOnline(method string) bool {
 //     reservation, never from the client. When it fails the books must be
 //     released; ErrDuplicateKey means a parallel request won, so return its
 //     order as a replay.
-//  6. Online: return the order with its PaymentURL; when signing fails,
-//     cancel the order and release.
+//  6. Online: return the order with its PaymentURL or Transfer; when that
+//     fails, cancel the order and release.
 //  7. Cash on delivery: catalog.Sell(code, ids). When it fails, cancel the
 //     order and release.
 //
@@ -196,7 +220,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (order Order, repl
 
 	// Refused before any book is held: there is no gateway to pay it on.
 	online := isOnline(in.PaymentMethod)
-	if online && s.payments == nil {
+	if online && s.payments == nil && !s.paidByTransfer(in.PaymentMethod) {
 		return Order{}, false, invalid("payment method %q is not available right now", in.PaymentMethod)
 	}
 
@@ -312,7 +336,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (order Order, repl
 	// An online order stops here: its books are sold once it is paid
 	// (ConfirmPayment). Without a payment page it cannot be paid at all.
 	if online {
-		withURL, err := s.withPaymentURL(order, in.ClientIP)
+		withPayment, err := s.withPayment(order, in.ClientIP)
 		if err != nil {
 			s.cancel(ctx, order, "payment could not be started")
 			s.release(ctx, code, ids)
@@ -320,7 +344,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (order Order, repl
 			return Order{}, false, err
 		}
 
-		return withURL, false, nil
+		return withPayment, false, nil
 	}
 
 	if err := s.sell(ctx, code, ids); err != nil {
@@ -394,15 +418,48 @@ func (s *Service) replay(existing Order, in CreateInput) (Order, bool, error) {
 
 	// A customer who pressed "Place order" twice still gets to the payment
 	// page. The URL is signed again: it is never stored.
-	if existing.Status == StatusAwaitingPayment && s.payments != nil {
-		withURL, err := s.withPaymentURL(existing, in.ClientIP)
+	if existing.Status == StatusAwaitingPayment && (s.payments != nil || s.paidByTransfer(existing.PaymentMethod)) {
+		withPayment, err := s.withPayment(existing, in.ClientIP)
 		if err != nil {
 			return Order{}, false, err
 		}
-		return withURL, true, nil
+		return withPayment, true, nil
 	}
 
 	return existing, true, nil
+}
+
+// withPayment returns o with what its customer pays with: the transfer
+// instructions of an order paid by bank transfer, otherwise the gateway's
+// signed PaymentURL.
+func (s *Service) withPayment(o Order, ip string) (Order, error) {
+	if s.paidByTransfer(o.PaymentMethod) {
+		return s.withTransfer(o)
+	}
+	return s.withPaymentURL(o, ip)
+}
+
+// withTransfer returns o with the instructions to pay it by bank transfer.
+// An order whose payment window has closed gets none, as with withPaymentURL:
+// the books may be released before the transfer arrives.
+func (s *Service) withTransfer(o Order) (Order, error) {
+
+	if o.ExpiresAt == nil {
+		return o, nil
+	}
+
+	deadline := o.ExpiresAt.Add(-s.hold / payWindowShare)
+	if !time.Now().Before(deadline) {
+		return o, nil
+	}
+
+	in, err := s.transfers.Instructions(o.Code, o.SubtotalVND)
+	if err != nil {
+		return Order{}, fmt.Errorf("transfer instructions of %s: %w", o.Code, err)
+	}
+
+	o.Transfer = &in
+	return o, nil
 }
 
 // withPaymentURL returns o with a signed PaymentURL for it. An order whose

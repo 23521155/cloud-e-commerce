@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { MAX_BASKET } from "@/lib/basket";
 import { isPlaceable, placeOrder as submitOrder } from "@/lib/order-api";
 import { getPaymentMethod } from "@/lib/payment";
+import { savePendingTransfer } from "@/lib/transfer";
 
 /** What the checkout form shows after a refused order. Empty while nothing went wrong. */
 export type CheckoutState = {
@@ -47,6 +48,13 @@ export async function placeOrder(_prev: CheckoutState, formData: FormData): Prom
   if (result.ok) {
     const { order } = result;
     if (method.id === "cod") redirect(`/checkout/confirmed?method=cod&code=${encodeURIComponent(order.code)}`);
+
+    // VietQR is paid by bank transfer to the shop's account: the instructions are shown on
+    // /checkout/transfer, which waits until the order service says the money arrived.
+    if (order.transfer) {
+      await savePendingTransfer(order, text(formData, "email"));
+      redirect("/checkout/transfer");
+    }
 
     // The copies are held while the reader pays on VNPay's page; it sends them back to
     // /checkout/vnpay-return. A repeated submit of an order whose time to pay ran out has no page;

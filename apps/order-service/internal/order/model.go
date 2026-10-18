@@ -1,6 +1,10 @@
 package order
 
-import "time"
+import (
+	"time"
+
+	"github.com/fizzisme/order-service/internal/payment/sepay"
+)
 
 // Statuses of an order (orders.status).
 const (
@@ -9,8 +13,9 @@ const (
 	StatusCancelled       = "CANCELLED"
 )
 
-// Payment methods (orders.payment_method). VietQR and card are paid through
-// VNPay; MoMo and PayPal are not handled yet.
+// Payment methods (orders.payment_method). VietQR is paid by bank transfer
+// to the shop's account when SePay is configured, and through VNPay
+// otherwise; card is paid through VNPay; MoMo and PayPal are not handled yet.
 const (
 	PaymentCOD    = "cod"
 	PaymentVietQR = "vietqr"
@@ -50,6 +55,11 @@ type Order struct {
 	// PaymentURL is the gateway page an online order is paid on. It is
 	// signed for each answer, never stored.
 	PaymentURL string `db:"-" json:"paymentUrl,omitempty"`
+
+	// Transfer is how to pay a VietQR order by bank transfer, when it is paid
+	// that way instead of on a gateway page. Built for each answer, never
+	// stored.
+	Transfer *sepay.Instructions `db:"-" json:"transfer,omitempty"`
 }
 
 // Item is a book as it was when the order was placed. book_id points to the

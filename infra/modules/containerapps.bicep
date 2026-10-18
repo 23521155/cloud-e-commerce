@@ -41,6 +41,19 @@ param googleClientId string = ''
 @secure()
 param googleClientSecret string = ''
 
+@description('Key of the SePay webhook (authentication: API Key). With the account below it turns on bank transfer for VietQR orders; any of them empty: VietQR stays on VNPay.')
+@secure()
+param sepayApiKey string = ''
+
+@description('Bank of the account VietQR orders are paid into, as VietQR names it.')
+param sepayBank string = 'BIDV'
+
+@description('The account the customer pays into. For BIDV, the virtual account (VA) SePay watches.')
+param sepayAccountNo string = ''
+
+@description('Owner of that account, as the bank spells it.')
+param sepayAccountName string = ''
+
 @description('Storage account whose queues carry emails and account events.')
 param storageAccountName string
 
@@ -314,6 +327,9 @@ resource web 'Microsoft.App/containerApps@2024-03-01' = {
   }
 }
 
+// A Container App secret cannot be empty, and the service wants all four SePay settings or none.
+var sepayEnabled = !empty(sepayApiKey) && !empty(sepayAccountNo) && !empty(sepayAccountName)
+
 resource order 'Microsoft.App/containerApps@2024-03-01' = {
   name: 'order-service'
   location: location
@@ -326,12 +342,14 @@ resource order 'Microsoft.App/containerApps@2024-03-01' = {
     workloadProfileName: 'Consumption'
     configuration: {
       registries: registries
-      secrets: [
+      secrets: concat([
         #disable-next-line use-secure-value-for-secure-inputs // built from the secure sqlAdminPassword
         { name: 'database-url', value: orderDbUrl }
         { name: 'internal-token', value: internalToken }
         { name: 'storage-connection-string', value: storageConnectionString }
-      ]
+      ], sepayEnabled ? [
+        { name: 'sepay-api-key', value: sepayApiKey }
+      ] : [])
       ingress: {
         external: false // internal only: the gateway calls it
         targetPort: 8084
@@ -344,7 +362,7 @@ resource order 'Microsoft.App/containerApps@2024-03-01' = {
           name: 'order-service'
           image: '${acrLoginServer}/order-service:${imageTag}'
           resources: goResources
-          env: [
+          env: concat([
             { name: 'APP_NAME', value: 'order-service' }
             { name: 'PORT', value: '8084' }
             { name: 'GIN_MODE', value: 'release' }
@@ -360,7 +378,14 @@ resource order 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'VNPAY_CONFIRM_ON_RETURN', value: 'false' }
             // Reads user-email-verified: guest orders join the account whose email was confirmed.
             { name: 'STORAGE_CONNECTION_STRING', secretRef: 'storage-connection-string' }
-          ]
+          ], sepayEnabled ? [
+            // VietQR orders are paid by bank transfer to this account; SePay calls
+            // /api/orders/payments/sepay/webhook (through the gateway) when the money arrives.
+            { name: 'SEPAY_API_KEY', secretRef: 'sepay-api-key' }
+            { name: 'SEPAY_BANK', value: sepayBank }
+            { name: 'SEPAY_ACCOUNT_NO', value: sepayAccountNo }
+            { name: 'SEPAY_ACCOUNT_NAME', value: sepayAccountName }
+          ] : [])
         }
       ]
       // Scaling to zero also stops the unpaid-order sweep (every minute), which lets the
