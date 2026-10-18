@@ -201,6 +201,45 @@ func TestForwardHeaders(t *testing.T) {
 	}
 }
 
+// A header that is not a JWT is the backend's own business: SePay's webhook
+// authenticates with "Authorization: Apikey <key>" and the order service checks it.
+func TestForwardNonBearerAuthorization(t *testing.T) {
+
+	setupLogger(t)
+
+	backend := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte(r.Header.Get("Authorization")))
+		}),
+	)
+
+	defer backend.Close()
+
+	rp, _ := New(
+		backend.URL,
+		"/orders",
+		5*time.Second,
+		resilience.NewBreaker("orders"),
+		&resilience.RetryConfig{MaxAttempts: 1},
+		"orders",
+		false,
+		0,
+		0,
+	)
+
+	req := httptest.NewRequest(http.MethodPost, "/orders/payments/sepay/webhook", nil)
+	req.Header.Set("Authorization", "Apikey s3cret")
+
+	rr := httptest.NewRecorder()
+	rp.ServeHTTP(rr, req)
+
+	body, _ := io.ReadAll(rr.Body)
+
+	if string(body) != "Apikey s3cret" {
+		t.Fatalf("expected the Apikey header to be forwarded, got %q", string(body))
+	}
+}
+
 func TestForwardQuery(t *testing.T) {
 
 	setupLogger(t)
