@@ -40,7 +40,7 @@ export function PaymentDetail({ method, total }: { method: PaymentMethodId; tota
       return (
         <div className="co-detail">
           <p className="co-detail__title">Pay by bank transfer</p>
-          <p className="co-detail__text">After you place the order, VNPay’s payment page opens for {amount}. Scan its QR code with any Vietnamese banking app, or pick your bank there.</p>
+          <p className="co-detail__text">After you place the order, a QR code for {amount} appears. Scan it with any Vietnamese banking app and keep the transfer text as it is; the page moves on by itself once the money arrives.</p>
         </div>
       );
     case "momo":
