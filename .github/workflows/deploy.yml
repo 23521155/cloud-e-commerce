@@ -210,6 +210,9 @@ jobs:
                customDomain='${{ vars.CUSTOM_DOMAIN }}' \
                googleClientId='${{ secrets.GOOGLE_CLIENT_ID }}' \
                googleClientSecret='${{ secrets.GOOGLE_CLIENT_SECRET }}' \
+               sepayApiKey='${{ secrets.SEPAY_API_KEY }}' \
+               sepayAccountNo='${{ vars.SEPAY_ACCOUNT_NO }}' \
+               sepayAccountName='${{ vars.SEPAY_ACCOUNT_NAME }}' \
             -o none
 
       # Apps already exist and Bicep was skipped: only move each app to the new image (new revision).
