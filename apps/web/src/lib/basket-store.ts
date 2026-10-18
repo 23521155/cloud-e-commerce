@@ -3,7 +3,7 @@
 // Guest basket, kept in this browser's localStorage as a list of book slugs. Every listing is a
 // single copy, so a slug is either in the basket or not. Book details and prices are fetched
 // fresh (/api/books) wherever the basket is shown; the order service reads prices again anyway.
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { MAX_BASKET, type BasketLine } from "@/lib/basket";
 import type { Book } from "@/lib/catalogue";
 
@@ -61,41 +61,70 @@ export function useBasket(): string[] | null {
   return useMemo(() => (raw === null ? null : parse(raw)), [raw]);
 }
 
+/** Every book fetched in this browser tab so far, by slug (null: unknown to the catalogue). Lives as long as the page does. */
+const fetched: Record<string, Book | null> = {};
+
+/** Asks /api/books for the books of csv (comma-separated slugs) and keeps the answer in `fetched`. */
+async function fetchBooks(csv: string): Promise<Record<string, Book | null>> {
+  const res = await fetch(`/api/books?slugs=${encodeURIComponent(csv)}`);
+  if (!res.ok) throw new Error(String(res.status));
+  const books = (await res.json()) as Book[];
+
+  const next: Record<string, Book | null> = {};
+  for (const slug of csv.split(",")) next[slug] = null;
+  for (const book of books) next[book.slug] = book;
+
+  Object.assign(fetched, next);
+  return next;
+}
+
 /**
  * The basket with its books, fetched from /api/books. lines is null while the basket or its
  * books are still loading; failed is true when the books could not be fetched. Books already
- * fetched are kept, so removing one shows at once instead of loading the basket again.
+ * fetched are kept, so removing one shows at once instead of loading the basket again, and so
+ * does coming back to the basket from another page.
  */
 export function useBasketLines(): { lines: BasketLine[] | null; failed: boolean } {
   const slugs = useBasket();
-  // Book by slug; null for a slug the catalogue does not know
-  const [known, setKnown] = useState<Record<string, Book | null>>({});
+  // Book by slug; null for a slug the catalogue does not know. Starts from what an earlier page of
+  // this visit already fetched, so going from the basket to checkout and back shows the card at once.
+  const [known, setKnown] = useState<Record<string, Book | null>>(() => ({ ...fetched }));
   const [failed, setFailed] = useState(false);
+  const revalidated = useRef(false);
 
   const missing = (slugs ?? []).filter((s) => !(s in known)).join(",");
 
   useEffect(() => {
     if (!missing) return;
     let live = true;
-    fetch(`/api/books?slugs=${encodeURIComponent(missing)}`)
-      .then((res) => (res.ok ? (res.json() as Promise<Book[]>) : Promise.reject(new Error(String(res.status)))))
-      .then(
-        (books) => {
-          if (!live) return;
-          setKnown((prev) => {
-            const next = { ...prev };
-            for (const slug of missing.split(",")) next[slug] = null;
-            for (const book of books) next[book.slug] = book;
-            return next;
-          });
-          setFailed(false);
-        },
-        () => live && setFailed(true),
-      );
+    fetchBooks(missing).then(
+      (next) => {
+        if (!live) return;
+        setKnown((prev) => ({ ...prev, ...next }));
+        setFailed(false);
+      },
+      () => live && setFailed(true),
+    );
     return () => {
       live = false;
     };
   }, [missing]);
+
+  // Books kept from an earlier page are shown first and asked for again once per visit, so a copy
+  // someone bought in the meantime still turns up as sold. A failed check keeps what is shown.
+  const ready = slugs !== null;
+  useEffect(() => {
+    if (!ready || revalidated.current) return;
+    revalidated.current = true;
+    const cached = (slugs ?? []).filter((s) => s in fetched).join(",");
+    if (!cached) return;
+    fetchBooks(cached).then(
+      (next) => setKnown((prev) => ({ ...prev, ...next })),
+      () => {},
+    );
+    // Only the first moment the basket is read matters
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
 
   if (slugs === null || missing) return { lines: null, failed };
   return {
