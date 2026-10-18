@@ -1,8 +1,9 @@
-import { CARD_ROWS } from "@/components/cart/Basket";
+import { CARD_ROWS, Seal } from "@/components/cart/Basket";
 
 /**
- * Blank basket card shown while the basket is read: by loading.tsx while the server renders, then
- * by the views until the browser has read localStorage and fetched the books.
+ * Blank basket card shown until the browser has read localStorage and fetched the books. It has
+ * the same parts as the real card (fields, seal, column heads, ruled lines), so the card does not
+ * change size or grow new parts when the books arrive.
  */
 export function BasketSkeleton() {
   return (
@@ -16,7 +17,38 @@ export function BasketSkeleton() {
             <p className="sr-only" role="status">
               Reading your basket…
             </p>
+
+            <div className="lib-card__top" aria-hidden="true">
+              <dl className="lib-card__fields">
+                <div>
+                  <dt>Date</dt>
+                  <dd>—</dd>
+                </div>
+                <div>
+                  <dt>Copies</dt>
+                  <dd>—</dd>
+                </div>
+                <div>
+                  <dt>Shipping</dt>
+                  <dd>Calculated at checkout</dd>
+                </div>
+              </dl>
+              <Seal />
+            </div>
+
             <table className="lib-card__table" aria-hidden="true">
+              <thead>
+                <tr>
+                  <th scope="col">No.</th>
+                  <th scope="col">Copy</th>
+                  <th scope="col" className="lib-card__col-binding">
+                    Binding
+                  </th>
+                  <th scope="col" className="text-right">
+                    Price
+                  </th>
+                </tr>
+              </thead>
               <tbody>
                 {Array.from({ length: CARD_ROWS }, (_, i) => (
                   <tr key={i} className="lib-card__blank">
