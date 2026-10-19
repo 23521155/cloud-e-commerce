@@ -100,15 +100,32 @@ function toBook(b: ApiBook): Book {
   };
 }
 
+/**
+ * Catalogue reads under way in this process, by URL. The data cache only dedupes within one render,
+ * so visits that miss it at the same moment would each call the gateway; they share this call instead.
+ */
+const inFlight = new Map<string, Promise<unknown>>();
+
 /** GET a catalogue API path. A 404 is "not found" (undefined); any other failure throws. */
 async function get<T>(path: string, params?: URLSearchParams): Promise<T | undefined> {
   const query = params?.toString();
+  const url = `${BASE}${path}${query ? `?${query}` : ""}`;
+
+  let pending = inFlight.get(url);
+  if (!pending) {
+    pending = fetchJson(url, path).finally(() => inFlight.delete(url));
+    inFlight.set(url, pending);
+  }
+  return (await pending) as T | undefined;
+}
+
+async function fetchJson(url: string, path: string): Promise<unknown> {
   // Shared data: no per-visitor headers, which would split the cache key per visitor.
-  const res = await fetch(`${BASE}${path}${query ? `?${query}` : ""}`, { next: { revalidate: CACHE_SECONDS } });
+  const res = await fetch(url, { next: { revalidate: CACHE_SECONDS } });
 
   if (res.status === 404) return undefined;
   if (!res.ok) throw new Error(`Catalogue API answered ${res.status} for ${path}`);
-  return (await res.json()) as T;
+  return res.json();
 }
 
 export type CatalogueQuery = {
