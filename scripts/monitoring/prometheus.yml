@@ -1,0 +1,9 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  # The request counters Promtail builds from the Nginx access log.
+  - job_name: nginx
+    static_configs:
+      - targets:
+          - promtail:9080

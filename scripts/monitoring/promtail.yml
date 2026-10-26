@@ -1,0 +1,49 @@
+# Reads the access log of the blue/green Nginx from Docker. Each request becomes a Loki log line
+# labelled with its status, and a Prometheus counter and latency histogram on :9080/metrics.
+server:
+  http_listen_port: 9080
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: nginx
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+    relabel_configs:
+      - source_labels:
+          - __meta_docker_container_label_com_docker_compose_project
+          - __meta_docker_container_label_com_docker_compose_service
+        regex: bluegreen;nginx
+        action: keep
+      - target_label: job
+        replacement: nginx
+    pipeline_stages:
+      # Nginx also prints start-up notices; only the access log lines are JSON.
+      - drop:
+          expression: "^[^{]"
+      - json:
+          expressions:
+            status: status
+            request_time: request_time
+            served_by: served_by
+      - labels:
+          status:
+          served_by:
+      - metrics:
+          http_requests_total:
+            type: Counter
+            description: Requests answered by Nginx, by status.
+            source: status
+            config:
+              action: inc
+          http_request_duration_seconds:
+            type: Histogram
+            description: Time Nginx took to answer, in seconds.
+            source: request_time
+            config:
+              buckets: [0.1, 0.25, 0.5, 1, 2.5, 5, 10]

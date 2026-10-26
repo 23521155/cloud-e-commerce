@@ -1,0 +1,51 @@
+# The same rule as webapp-failed-requests on Azure: every minute, if any request failed (status 4xx
+# or 5xx) in the last 5 minutes, send an email.
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: email
+    receivers:
+      - uid: email
+        type: email
+        settings:
+          addresses: team@bluegreen.local
+
+policies:
+  - orgId: 1
+    receiver: email
+
+groups:
+  - orgId: 1
+    name: web
+    folder: web
+    interval: 1m
+    rules:
+      - uid: web-failed-requests
+        title: web-failed-requests
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        data:
+          # Counted from the logs rather than the Prometheus counter: a counter's first increase is
+          # invisible to increase(), so the first failed request would not fire the alert.
+          - refId: A
+            datasourceUid: loki
+            relativeTimeRange:
+              from: 300
+              to: 0
+            model:
+              refId: A
+              queryType: instant
+              expr: sum(count_over_time({job="nginx", status=~"[45].."}[5m]))
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]

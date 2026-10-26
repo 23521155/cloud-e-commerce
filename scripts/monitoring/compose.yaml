@@ -1,0 +1,66 @@
+# Monitoring for the blue/green web app with open-source tools: the counterpart of Application
+# Insights and an Azure Monitor alert. Promtail reads Nginx's access log (one JSON line per request)
+# from Docker, sends it to Loki and counts requests for Prometheus. Grafana shows both and emails an
+# alert, caught by Mailpit, when a request fails, like the webapp-failed-requests alert on Azure.
+#
+# Start scripts/bluegreen first; this joins its network.
+#   docker compose -f scripts/monitoring/compose.yaml up -d
+#   Grafana http://localhost:3002 (admin/admin) · Prometheus http://localhost:9091 · Mailpit http://localhost:8026
+name: monitoring
+
+networks:
+  default:
+    name: bluegreen_default
+    external: true
+
+services:
+  loki:
+    image: grafana/loki:3.0.0
+    restart: unless-stopped
+    command: -config.file=/etc/loki/local-config.yaml
+    ports:
+      - "${LOKI_PORT:-3101}:3100"
+
+  promtail:
+    image: grafana/promtail:3.0.0
+    restart: unless-stopped
+    command: -config.file=/etc/promtail/config.yml
+    volumes:
+      - ./promtail.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    restart: unless-stopped
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "${PROMETHEUS_PORT:-9091}:9090"
+
+  grafana:
+    image: grafana/grafana:12.2.0
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_SMTP_ENABLED: "true"
+      GF_SMTP_HOST: mailpit:1025
+      GF_SMTP_FROM_ADDRESS: grafana@bluegreen.local
+      GF_SMTP_STARTTLS_POLICY: NoStartTLS
+    volumes:
+      - ./grafana:/etc/grafana/provisioning:ro
+    ports:
+      - "${GRAFANA_PORT:-3002}:3000"
+    depends_on:
+      - prometheus
+      - loki
+      - mailpit
+
+  # Catches the alert emails; read them at http://localhost:8026.
+  mailpit:
+    image: axllent/mailpit:v1.27
+    restart: unless-stopped
+    ports:
+      - "${MAILPIT_UI_PORT:-8026}:8025"
