@@ -1,0 +1,3 @@
+{
+  "/(shop)/checkout/vnpay-return/page": "app/(shop)/checkout/vnpay-return/page.js"
+}

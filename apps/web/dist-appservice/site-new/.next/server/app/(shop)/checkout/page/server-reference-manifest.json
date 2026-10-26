@@ -1,0 +1,27 @@
+{
+  "node": {
+    "001e18912145cc709b74dcd7d962c8c9d70c935e5b": {
+      "workers": {
+        "app/(shop)/checkout/page": {
+          "moduleId": 519,
+          "async": false,
+          "codeHash": null
+        }
+      },
+      "exportedName": "signOut",
+      "filename": "src/lib/auth-actions.ts"
+    },
+    "603e487d5a6404feeca0cdc88150d18d0cc47925a2": {
+      "workers": {
+        "app/(shop)/checkout/page": {
+          "moduleId": 519,
+          "async": false,
+          "codeHash": null
+        }
+      },
+      "exportedName": "placeOrder",
+      "filename": "src/app/(shop)/checkout/actions.ts"
+    }
+  },
+  "edge": {}
+}

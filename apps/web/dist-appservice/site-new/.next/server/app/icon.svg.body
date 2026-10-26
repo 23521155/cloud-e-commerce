@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-2 0 62 62">
+  <g fill="#d3a770">
+      <defs>
+        <filter id="logo-ink" x="-5%" y="-5%" width="110%" height="110%">
+          <feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" seed="3" result="n" />
+          <feDisplacementMap in="SourceGraphic" in2="n" scale=".7" />
+        </filter>
+        <filter id="logo-stroke" x="-5%" y="-80%" width="110%" height="260%">
+          <feTurbulence type="fractalNoise" baseFrequency=".04 .5" numOctaves="3" seed="9" result="n" />
+          <feDisplacementMap in="SourceGraphic" in2="n" scale="2.6" result="line" />
+          <feTurbulence type="fractalNoise" baseFrequency=".015 1.4" numOctaves="2" seed="4" result="s" />
+          <feColorMatrix in="s" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  7 0 0 0 -4.4" result="gaps" />
+          <feComposite in="line" in2="gaps" operator="out" />
+        </filter>
+        <mask id="logo-pages" maskUnits="userSpaceOnUse" x="-2" y="0" width="66" height="62">
+          <rect x="-2" y="0" width="66" height="62" fill="#fff" />
+          <g fill="none" stroke="#000" stroke-width=".7" stroke-linecap="round">
+            <path d="M30.4 49.2C25 46.6 17 46.2 9.6 47.8M30.4 46.4C25 43.8 17 43.4 9.6 45" />
+            <path d="M33.6 49.2C39 45.6 47 42.6 54.4 40.6M33.6 46.4C39 42.2 47 39 54.4 37" />
+            <path d="M32 44.2v8" stroke-width="1" />
+          </g>
+        </mask>
+      </defs>
+      <g filter="url(#logo-ink)">
+        <path
+          fill-rule="evenodd"
+          d="M8.6 7.2Q8.6 6 9.8 6h8.4q1.2 0 1.2 1.2v28q0 1.2-1.2 1.2H9.8q-1.2 0-1.2-1.2ZM9.6 9.4h8.8v.8H9.6ZM9.6 11.2h8.8v.8H9.6ZM9.6 31h8.8v.8H9.6ZM9.6 32.8h8.8v.8H9.6ZM10.6 15.6h6.8v11.2h-6.8ZM11.4 16.4h5.2V26h-5.2Z"
+        />
+        <g transform="translate(18.6 8.6) rotate(62.6) scale(.155 1.15) translate(-2 -4)">
+          <path d="M2 4.5Q50 2.5 100 4T198 3.5" fill="none" stroke="#d3a770" stroke-width="2.2" stroke-linecap="round" filter="url(#logo-stroke)" />
+        </g>
+        <g transform="translate(51.2 6.6) rotate(121.6) scale(.179 .85) translate(-2 -4)">
+          <path d="M2 4Q100 11.5 198 4" fill="none" stroke="#d3a770" stroke-width="2.2" stroke-linecap="round" filter="url(#logo-stroke)" />
+        </g>
+        <g transform="translate(0 37.8) scale(1 -1)">
+          <path d="M49 18.6V9a3 3 0 0 1 6 0v9.6Z" />
+          <path d="M48.4 19.2h7.2v1.4h-7.2Z" />
+          <path
+            fill-rule="evenodd"
+            d="M49.2 21.2h5.6c0 4-1.2 7.4-2.8 10.6-1.6-3.2-2.8-6.6-2.8-10.6ZM52.8 24.6a.8.8 0 1 1-1.6 0 .8.8 0 1 1 1.6 0ZM51.8 25.6h.4v4h-.4Z"
+          />
+        </g>
+        <path d="M8.6 6.6C6.4 6.2 3.4 5.6 3.4 7.7" fill="none" stroke="#d3a770" stroke-width="1.1" stroke-linecap="round" />
+        <circle cx="3.4" cy="8.6" r=".9" fill="none" stroke="#d3a770" stroke-width=".6" />
+        <path d="M.8 12 3.4 9.5 6 12ZM.2 12h6.4v1H.2ZM.2 19h6.4v1H.2ZM1.2 20h4.4l-.8 1H2Z" />
+        <path
+          fill-rule="evenodd"
+          d="M.8 13h5.2v6H.8ZM1.6 13.8h3.6v4.4H1.6ZM3.4 14.6c.9 1.2 1.3 2 1.3 2.6a1.3 1.3 0 0 1-2.6 0c0-.6.4-1.4 1.3-2.6Z"
+        />
+        <path d="M32 38.2l1.4 1.6-1.4 1.6-1.4-1.6Z" />
+        <g mask="url(#logo-pages)">
+          <path d="M32 52.5C25 48.6 15.5 48 6 50.6V41.4c9.5-2.4 19-1.8 26 2.4Z" />
+          <path d="M32 52.5c7-4.4 16.5-8 26-10.5v-9.4c-9.5 1.4-19 5.4-26 11.2Z" />
+        </g>
+        <path d="M41.2 47.2h3l.2 12.6-1.7-1.9-1.7 1.9Z" />
+      </g>
+    </g>
+</svg>

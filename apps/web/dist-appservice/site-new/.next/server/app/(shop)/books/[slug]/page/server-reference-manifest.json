@@ -1,0 +1,16 @@
+{
+  "node": {
+    "001e18912145cc709b74dcd7d962c8c9d70c935e5b": {
+      "workers": {
+        "app/(shop)/books/[slug]/page": {
+          "moduleId": 52481,
+          "async": false,
+          "codeHash": null
+        }
+      },
+      "exportedName": "signOut",
+      "filename": "src/lib/auth-actions.ts"
+    }
+  },
+  "edge": {}
+}
