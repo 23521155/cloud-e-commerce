@@ -1,0 +1,268 @@
+name: Deploy
+
+# Push to develop deploys to the regions in the repo variable AZURE_REGIONS
+# (default: japaneast). Run it by hand to pick another region or to force a full infra deploy.
+on:
+  push:
+    branches: [develop]
+    paths:
+      - 'apps/api-gateway/**'
+      - 'apps/catalog-service/**'
+      - 'apps/order-service/**'
+      - 'apps/user-service/**'
+      - 'apps/functions/**'
+      - 'apps/web/**'
+      - 'proto/**'
+      - 'infra/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+    inputs:
+      regions:
+        description: 'Regions to deploy'
+        type: choice
+        options: [japaneast, koreacentral, both]
+        default: japaneast
+      infra:
+        description: 'Run the Bicep deployment even if the apps already exist'
+        type: boolean
+        default: false
+      seed:
+        description: 'Seed the catalog database even if the apps already exist'
+        type: boolean
+        default: false
+
+permissions:
+  id-token: write # OIDC login to Azure
+  contents: read
+
+env:
+  PREFIX: marginalleya
+  SERVICES: 'api-gateway catalog-service order-service user-service web'
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+    steps:
+      - id: m
+        shell: bash
+        run: |
+          choice="${{ inputs.regions || vars.AZURE_REGIONS || 'japaneast' }}"
+          jp='{"location":"japaneast","rg":"rg-marginalleya-jp","sqlFreeOffer":false}'
+          kr='{"location":"koreacentral","rg":"rg-marginalleya-kr","sqlFreeOffer":true}'
+          case "$choice" in
+            both) include="$kr,$jp" ;;
+            koreacentral) include="$kr" ;;
+            *) include="$jp" ;;
+          esac
+          echo "matrix={\"include\":[$include]}" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: plan
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
+    concurrency:
+      group: deploy-${{ matrix.location }}
+      cancel-in-progress: false
+    env:
+      TAG: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the infra/ diff against the previous push needs history
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # The apps exist only after the first full deployment. When they do, a normal
+      # deploy just swaps images; otherwise (or when asked) Bicep creates or updates everything.
+      - name: Check existing infrastructure
+        id: state
+        shell: bash
+        run: |
+          az config set extension.use_dynamic_install=yes_without_prompt
+          if az containerapp show -g "${{ matrix.rg }}" -n api-gateway -o none 2>/dev/null; then
+            echo "apps_exist=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "apps_exist=false" >> "$GITHUB_OUTPUT"
+          fi
+          # Run Bicep again when asked by hand or when infra/ changed in this push.
+          run_bicep=false
+          if [ "${{ inputs.infra }}" = "true" ]; then run_bicep=true; fi
+          before="${{ github.event.before }}"
+          if [ "${{ github.event_name }}" = "push" ] && [ -n "$before" ] && ! git diff --quiet "$before" HEAD -- infra 2>/dev/null; then
+            run_bicep=true
+          fi
+          echo "run_bicep=$run_bicep" >> "$GITHUB_OUTPUT"
+
+      - name: Create resource group
+        run: az group create -n "${{ matrix.rg }}" -l "${{ matrix.location }}" -o none
+
+      # Phase 1 creates the registry, SQL, Redis, monitoring and network, so images have somewhere to go.
+      # It also runs when infra/ changed, so a new database exists before the migrations below.
+      - name: Provision base infrastructure
+        if: steps.state.outputs.apps_exist != 'true' || steps.state.outputs.run_bicep == 'true'
+        run: |
+          az deployment group create -g "${{ matrix.rg }}" -n "base-${{ github.run_id }}" \
+            -f infra/main.bicep \
+            -p location=${{ matrix.location }} sqlFreeOffer=${{ matrix.sqlFreeOffer }} deployApps=false \
+               sqlAdminPassword='${{ secrets.SQL_ADMIN_PASSWORD }}' \
+               internalToken='${{ secrets.INTERNAL_TOKEN }}' \
+               jwtSecret='${{ secrets.JWT_SECRET }}' \
+               mfaEncryptionKey='${{ secrets.MFA_ENCRYPTION_KEY }}' \
+            -o none
+
+      # The OIDC assertion lives about 5 minutes and base provisioning (Redis) takes longer,
+      # so sign in again before the next az call needs a fresh token.
+      - name: Re-login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Find registry
+        id: acr
+        run: |
+          name=$(az acr list -g "${{ matrix.rg }}" --query "[0].name" -o tsv)
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          az acr login -n "$name"
+
+      - name: Build and push images
+        run: |
+          for s in $SERVICES; do
+            image="${{ steps.acr.outputs.name }}.azurecr.io/$s"
+            docker build -t "$image:$TAG" "apps/$s"
+            docker push "$image:$TAG"
+          done
+
+      - name: Re-login to Azure after the image build
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # The SQL server only accepts the apps' subnet, so the runner's IP is allowed just for the
+      # migration and the rule is removed again afterwards.
+      - name: Open SQL firewall for this runner
+        id: sql
+        run: |
+          server=$(az sql server list -g "${{ matrix.rg }}" --query "[0].name" -o tsv)
+          fqdn=$(az sql server list -g "${{ matrix.rg }}" --query "[0].fullyQualifiedDomainName" -o tsv)
+          ip=$(curl -sS https://api.ipify.org)
+          az sql server firewall-rule create -g "${{ matrix.rg }}" -s "$server" -n ci-runner \
+            --start-ip-address "$ip" --end-ip-address "$ip" -o none
+          echo "server=$server" >> "$GITHUB_OUTPUT"
+          echo "fqdn=$fqdn" >> "$GITHUB_OUTPUT"
+
+      # Runs before the new images start, so the schema is ready for them. The serverless databases
+      # may be paused, so each command retries while the first connection wakes them up.
+      - name: Migrate databases
+        env:
+          SQL_USER: sqladmin
+          SQL_PASSWORD: ${{ secrets.SQL_ADMIN_PASSWORD }}
+          SQL_FQDN: ${{ steps.sql.outputs.fqdn }}
+        run: |
+          for db in catalog:catalog-service orders:order-service users:user-service; do
+            name=${db%%:*}; svc=${db##*:}
+            for attempt in 1 2 3 4 5 6; do
+              docker run --rm -v "$PWD/apps/$svc/migrations:/migrations:ro" migrate/migrate:v4.20.1 \
+                -path=/migrations \
+                -database="sqlserver://$SQL_USER:$SQL_PASSWORD@$SQL_FQDN:1433?database=$name&encrypt=true" up && break
+              [ "$attempt" = 6 ] && exit 1
+              echo "Retrying $name migration ($attempt)"; sleep 20
+            done
+          done
+
+      # Upserts the ~9k books and is safe to repeat, so it only runs when the apps are being created
+      # or when asked by hand.
+      - name: Seed catalog
+        if: steps.state.outputs.apps_exist != 'true' || inputs.seed
+        env:
+          DATABASE_URL: sqlserver://sqladmin:${{ secrets.SQL_ADMIN_PASSWORD }}@${{ steps.sql.outputs.fqdn }}:1433?database=catalog&encrypt=true
+        run: |
+          docker run --rm -e DATABASE_URL --entrypoint ./seed-job \
+            "${{ steps.acr.outputs.name }}.azurecr.io/catalog-service:$TAG"
+
+      - name: Close SQL firewall
+        if: always() && steps.sql.outputs.server != ''
+        run: |
+          az sql server firewall-rule delete -g "${{ matrix.rg }}" -s "${{ steps.sql.outputs.server }}" -n ci-runner -o none || true
+
+      # Phase 2 creates the apps (first time) or applies infra changes, always with the new tag.
+      - name: Deploy infrastructure and apps
+        if: steps.state.outputs.apps_exist != 'true' || steps.state.outputs.run_bicep == 'true'
+        run: |
+          az deployment group create -g "${{ matrix.rg }}" -n "apps-${{ github.run_id }}" \
+            -f infra/main.bicep \
+            -p location=${{ matrix.location }} sqlFreeOffer=${{ matrix.sqlFreeOffer }} deployApps=true imageTag=$TAG \
+               sqlAdminPassword='${{ secrets.SQL_ADMIN_PASSWORD }}' \
+               internalToken='${{ secrets.INTERNAL_TOKEN }}' \
+               jwtSecret='${{ secrets.JWT_SECRET }}' \
+               mfaEncryptionKey='${{ secrets.MFA_ENCRYPTION_KEY }}' \
+               customDomain='${{ vars.CUSTOM_DOMAIN }}' \
+               googleClientId='${{ secrets.GOOGLE_CLIENT_ID }}' \
+               googleClientSecret='${{ secrets.GOOGLE_CLIENT_SECRET }}' \
+               sepayApiKey='${{ secrets.SEPAY_API_KEY }}' \
+               sepayAccountNo='${{ vars.SEPAY_ACCOUNT_NO }}' \
+               sepayAccountName='${{ vars.SEPAY_ACCOUNT_NAME }}' \
+            -o none
+
+      # Apps already exist and Bicep was skipped: only move each app to the new image (new revision).
+      - name: Update app images
+        if: steps.state.outputs.apps_exist == 'true' && steps.state.outputs.run_bicep != 'true'
+        run: |
+          for s in $SERVICES; do
+            az containerapp update -g "${{ matrix.rg }}" -n "$s" \
+              --image "${{ steps.acr.outputs.name }}.azurecr.io/$s:$TAG" -o none
+          done
+
+      # The sendEmail Function runs on the Flex Consumption plan, which takes a zip package rather
+      # than an image: the compiled code, host.json and the production node_modules.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/functions/package-lock.json
+
+      - name: Package the Function
+        working-directory: apps/functions
+        run: |
+          npm ci
+          npm run build
+          npm prune --omit=dev
+          zip -qr "$RUNNER_TEMP/functions.zip" host.json package.json dist node_modules
+
+      # Bicep and the image pushes can outlast the OIDC assertion; sign in again first.
+      - name: Re-login to Azure before the Function deploy
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy the Function
+        run: |
+          app=$(az functionapp list -g "${{ matrix.rg }}" --query "[0].name" -o tsv)
+          az functionapp deployment source config-zip -g "${{ matrix.rg }}" -n "$app" --src "$RUNNER_TEMP/functions.zip" -o none
+          echo "function: $app" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Smoke test
+        shell: bash
+        run: |
+          gw=$(az containerapp show -g "${{ matrix.rg }}" -n api-gateway --query properties.configuration.ingress.fqdn -o tsv)
+          web=$(az containerapp show -g "${{ matrix.rg }}" -n web --query properties.configuration.ingress.fqdn -o tsv)
+          # Apps may be scaled to zero, so allow for a cold start.
+          curl --fail --retry 10 --retry-delay 10 --retry-all-errors -sS "https://$gw/health"
+          # Through the gateway to user-service, which also checks its database.
+          curl --fail --retry 10 --retry-delay 10 --retry-all-errors -sS "https://$gw/api/users/health"
+          curl --fail --retry 10 --retry-delay 10 --retry-all-errors -sS -o /dev/null "https://$web/"
+          echo "web:     https://$web" >> "$GITHUB_STEP_SUMMARY"
+          echo "gateway: https://$gw" >> "$GITHUB_STEP_SUMMARY"

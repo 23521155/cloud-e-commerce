@@ -10,9 +10,9 @@ A full-stack e-commerce platform with a product recommendation service, built an
 flowchart LR
     User((User)) -->|HTTPS| Web
 
-    subgraph Azure["Azure Container Apps Environment"]
-        Web["web<br/>Next.js fullstack<br/>(external ingress)"]
-        Rec["recommender<br/>FastAPI<br/>(internal ingress)"]
+    subgraph Azure["Azure App Service"]
+        Web["web<br/>Next.js fullstack<br/>(public)"]
+        Rec["recommender<br/>FastAPI<br/>(internal only)"]
     end
 
     Web -->|REST| Rec
@@ -24,11 +24,11 @@ flowchart LR
     AI --> LA[Log Analytics]
     LA --> Alerts[Azure Monitor Alerts]
 
-    ACR[Azure Container Registry] -.images.-> Azure
+    ACR[Azure Container Registry] -.image.-> Rec
 ```
 
 - **web** — storefront, admin dashboard and backend API (Next.js Route Handlers). The only public entry point.
-- **recommender** — generates product recommendations from user behavior. Only reachable from inside the Container Apps environment.
+- **recommender** — generates product recommendations from user behavior. Not meant to be reachable from the public internet; only the web app calls it.
 - **Azure SQL Database** — single shared database for both services.
 
 ## Tech stack
@@ -38,8 +38,9 @@ flowchart LR
 | Web (fullstack) | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4 |
 | ORM | Prisma 7 with `@prisma/adapter-mssql` |
 | Recommender | Python, FastAPI, SQLAlchemy, pandas, scikit-learn |
+| Functions | Azure Functions v4 (Node.js, TypeScript) |
 | Database | Azure SQL Database (SQL Server, serverless tier) |
-| Hosting | Azure Container Apps, Azure Container Registry |
+| Hosting | Azure App Service (Web Apps); Azure Container Registry for the recommender image |
 | Monitoring | Application Insights, Log Analytics, Azure Monitor Alerts |
 | Infrastructure as Code | Bicep |
 | CI/CD | GitHub Actions |
@@ -62,16 +63,18 @@ cloud-e-commerce/
 │   │       ├── hooks/
 │   │       ├── lib/            # prisma client, auth, recommender client
 │   │       └── types/
-│   └── recommender/            # FastAPI recommendation service
-│       ├── app/
-│       │   ├── api/            # routers
-│       │   ├── core/           # config, logging, telemetry
-│       │   ├── db/             # database session
-│       │   ├── schemas/        # Pydantic models
-│       │   ├── services/       # business logic
-│       │   └── ml/             # recommendation algorithms / trained models
-│       ├── notebooks/          # data exploration, model experiments
-│       └── tests/
+│   ├── recommender/            # FastAPI recommendation service
+│   │   ├── app/
+│   │   │   ├── api/            # routers
+│   │   │   ├── core/           # config, logging, telemetry
+│   │   │   ├── db/             # database session
+│   │   │   ├── schemas/        # Pydantic models
+│   │   │   ├── services/       # business logic
+│   │   │   └── ml/             # recommendation algorithms / trained models
+│   │   ├── notebooks/          # data exploration, model experiments
+│   │   └── tests/
+│   └── functions/              # Azure Functions app (Node.js, TypeScript)
+│       └── src/functions/      # function registrations (v4 programming model)
 ├── infra/                      # Azure infrastructure (Bicep)
 │   ├── modules/
 │   └── parameters/
@@ -88,6 +91,7 @@ cloud-e-commerce/
 - Python 3.11+
 - Docker Desktop
 - Azure CLI (with Bicep)
+- Azure Functions Core Tools v4 (`npm i -g azure-functions-core-tools@4`)
 - An Azure subscription
 
 ## Getting started
@@ -112,6 +116,27 @@ Available scripts:
 | `npm run db:migrate` | Create/apply migrations in development |
 | `npm run db:deploy` | Apply migrations in production |
 | `npm run db:studio` | Open Prisma Studio |
+
+### Functions
+
+```bash
+cd apps/functions
+npm install
+cp local.settings.json.example local.settings.json
+npm start                # builds, then runs `func start` on http://localhost:7071
+curl http://localhost:7071/api/health
+```
+
+Available scripts:
+
+| Script | Description |
+|---|---|
+| `npm start` | Clean, build, then start the Functions host |
+| `npm run build` | Compile TypeScript into `dist/` |
+| `npm run watch` | Compile in watch mode |
+
+Add a function with `func new --template "<template>" --name <name>`; `func templates list` shows what is
+available.
 
 ### Recommender
 
