@@ -1,6 +1,10 @@
 // Catalogue client for catalog-service, reached through the API gateway.
 // Server-side only: the gateway URL is read on the server and never sent to the browser.
 import { GATEWAY_URL } from "@/lib/gateway";
+import { mockCatalogue } from "@/lib/catalogue-mock";
+
+/** UI-only deploy (e.g. Vercel, no backend): answer from in-memory mock data instead of the gateway. */
+const MOCK = process.env.MOCK_CATALOGUE === "true";
 
 export type Book = {
   slug: string;
@@ -57,7 +61,7 @@ const MAX_BATCH = 50;
 /** Tints the book photo variants know about (see BookArt). */
 const COVER_COLORS = ["#7a2620", "#5c1a16", "#3f110e", "#93352b", "#2c4436", "#24382e", "#1a2a22", "#3c1d0e", "#64331e", "#8e613c"];
 
-type ApiBook = {
+export type ApiBook = {
   slug: string;
   title: string;
   author: string | null;
@@ -102,6 +106,7 @@ function toBook(b: ApiBook): Book {
 
 /** GET a catalogue API path. A 404 is "not found" (undefined); any other failure throws. */
 async function get<T>(path: string, params?: URLSearchParams): Promise<T | undefined> {
+  if (MOCK) return mockCatalogue(path, params) as T | undefined;
   const query = params?.toString();
   // Shared data: no per-visitor headers, which would split the cache key per visitor.
   const res = await fetch(`${BASE}${path}${query ? `?${query}` : ""}`, { next: { revalidate: CACHE_SECONDS } });
