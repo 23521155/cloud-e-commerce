@@ -27,6 +27,11 @@ export type Book = {
   available: boolean;
   /** RESERVED while another reader is checking it out */
   status: "AVAILABLE" | "RESERVED" | "SOLD";
+  /** The keeper's introduction to this copy, when one was written */
+  description?: string;
+  publisher?: string;
+  language?: string;
+  pages?: number;
 };
 
 /** How an unavailable copy is labelled on the shelves and its page. */
@@ -71,6 +76,10 @@ export type ApiBook = {
   binding: string | null;
   priceVnd: number;
   coverUrl: string | null;
+  /** Not every source sends these (the mock catalogue leaves them out) */
+  description?: string | null;
+  language?: string | null;
+  pages?: number | null;
   rare: boolean;
   status: "AVAILABLE" | "RESERVED" | "SOLD";
   subjectSlug: string;
@@ -101,6 +110,10 @@ function toBook(b: ApiBook): Book {
     image: b.coverUrl ?? undefined,
     available: b.status === "AVAILABLE",
     status: b.status,
+    description: b.description?.trim() || undefined,
+    publisher: b.publisher ?? undefined,
+    language: b.language ?? undefined,
+    pages: b.pages ?? undefined,
   };
 }
 

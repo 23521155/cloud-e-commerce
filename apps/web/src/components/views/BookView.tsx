@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import { AddToBasketButton } from "@/components/basket/AddToBasketButton";
+import { BookOpener } from "@/components/catalogue/BookOpener";
+import { BookStand } from "@/components/motion/BookFlight";
 import { MotionController } from "@/components/motion/MotionController";
-import { BookCover, BookPhoto } from "@/components/ui/BookArt";
+import { BookPhoto } from "@/components/ui/BookArt";
 import { DotButton } from "@/components/ui/DotButton";
 import type { Book } from "@/lib/catalogue";
 
@@ -45,10 +47,9 @@ export function BookView({ book, related }: { book: Book; related: Book[] }) {
         </nav>
 
         <div className="book__grid">
-          <div className="book__cover" data-reveal="fade">
-            <div className="book__cover-inner">
-              <BookCover title={book.title} author={book.author} color={book.color} eager />
-            </div>
+          {/* Open on its introduction; arriving from the catalogue, the flying book lands on this stand */}
+          <div className="book__cover">
+            <BookStand book={book} />
           </div>
 
           <div className="book__info">
@@ -146,6 +147,7 @@ export function BookView({ book, related }: { book: Book; related: Book[] }) {
         <ul className="catalogue__grid book__related m-0 list-none p-0">
           {related.map((b) => (
             <li key={b.slug}>
+              <BookOpener book={b}>
               <Link href={`/books/${b.slug}`} className="work-card" data-reveal="fade">
                 <div className="work-card__media">
                   <BookPhoto title={b.title} author={b.author} color={b.color} />
@@ -158,6 +160,7 @@ export function BookView({ book, related }: { book: Book; related: Book[] }) {
                   <p className="m-0 mt-3 font-serif text-xl tabular-nums text-parchment-100">{price.format(b.price)}</p>
                 </div>
               </Link>
+              </BookOpener>
             </li>
           ))}
         </ul>

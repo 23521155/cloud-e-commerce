@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BookOpener } from "@/components/catalogue/BookOpener";
 import { BookPhoto } from "@/components/ui/BookArt";
 import { DotButton } from "@/components/ui/DotButton";
 import type { WishlistItem } from "@/lib/wishlist";
@@ -23,6 +24,7 @@ export function Wishlist({ items }: { items: WishlistItem[] }) {
     <ul className="catalogue__grid m-0 list-none p-0">
       {items.map(({ book, sold }) => (
         <li key={book.slug} className={`wish${sold ? " wish--sold" : ""}`}>
+          <BookOpener book={book}>
           <Link href={`/books/${book.slug}`} className="work-card" data-reveal="fade">
             <div className="work-card__media">
               <BookPhoto title={book.title} author={book.author} color={book.color} />
@@ -45,6 +47,7 @@ export function Wishlist({ items }: { items: WishlistItem[] }) {
               <p className="m-0 mt-3 font-serif text-xl tabular-nums text-parchment-100">{price.format(book.price)}</p>
             </div>
           </Link>
+          </BookOpener>
 
           <div className="wish__actions">
             {sold ? (

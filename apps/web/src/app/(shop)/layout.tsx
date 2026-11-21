@@ -1,5 +1,6 @@
 import { SiteFooter } from "@/components/layout/SiteFooter";
 import { SiteHeader } from "@/components/layout/SiteHeader";
+import { BookFlightHost } from "@/components/motion/BookFlight";
 import { getSession } from "@/lib/session";
 
 // Render per request (never at build time: the gateway is not reachable during a Docker build),
@@ -18,6 +19,8 @@ export default async function ShopLayout({ children }: LayoutProps<"/">) {
         {children}
       </main>
       <SiteFooter />
+      {/* Stays mounted across page changes, so a book flying from the catalogue survives the navigation */}
+      <BookFlightHost />
     </>
   );
 }

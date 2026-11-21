@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Form from "next/form";
 import Link from "next/link";
+import { BookOpener } from "@/components/catalogue/BookOpener";
 import { ScrollToShelf } from "@/components/catalogue/ScrollToShelf";
 import { SubjectFilter } from "@/components/catalogue/SubjectFilter";
 import { MotionController } from "@/components/motion/MotionController";
@@ -176,6 +177,8 @@ export default async function CataloguePage({ searchParams }: PageProps<"/catalo
           <ul id="shelf" className="catalogue__grid m-0 list-none scroll-mt-10 p-0">
             {books.map((book) => (
               <li key={book.slug}>
+                {/* Resting on a book (or tapping it) opens it on its introduction; a click still follows the link */}
+                <BookOpener book={book}>
                 {/* Sold and reserved copies stay on the shelf, faded, so their pages can still be read */}
                 <Link href={`/books/${book.slug}`} className={`work-card ${book.available ? "" : "opacity-45 grayscale"}`} data-reveal="fade">
                   <div className="work-card__media">
@@ -195,6 +198,7 @@ export default async function CataloguePage({ searchParams }: PageProps<"/catalo
                     <p className="m-0 mt-3 font-serif text-xl tabular-nums text-parchment-100">{price.format(book.price)}</p>
                   </div>
                 </Link>
+                </BookOpener>
               </li>
             ))}
           </ul>
