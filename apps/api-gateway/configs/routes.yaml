@@ -99,3 +99,26 @@ routes:
       burst: 30
 
     auth_mode: required
+    
+  # Sell-to-us submissions awaiting admin review.
+  - name: sell
+    prefix: /api/sell
+    upstream: ${CATALOG_SERVICE}
+
+    timeout: 5s
+
+    # Avoid duplicate submissions when a POST times out.
+    retry:
+      attempts: 1
+      base_delay: 1s
+      max_delay: 3s
+
+    breaker:
+      enabled: true
+
+    rate_limit:
+      requests: 5
+      window: 1m
+      burst: 2
+
+    auth_mode: optional
