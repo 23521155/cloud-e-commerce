@@ -23,8 +23,9 @@ export function Book({ title, author, variant = "forest", plain = false, eager =
         className="absolute max-w-none"
         style={{ width: "138.4%", height: "auto", left: "-19%", top: "-16.6%" }}
       />
+      {/* Own layer (translateZ): Chrome drops this lettering when a parent tilts the book (catalogue hover), under the drop-shadow filter */}
       {!plain && (
-        <div className="absolute inset-y-[14%] left-[20%] right-[12%] flex overflow-hidden flex-col items-center justify-center gap-[4cqw] text-center">
+        <div className="absolute inset-y-[14%] left-[20%] right-[12%] flex overflow-hidden flex-col [transform:translateZ(0)] items-center justify-center gap-[4cqw] text-center">
           <span className="line-clamp-5 break-words font-serif text-[min(7cqw,26px)] uppercase leading-[1.4] tracking-[0.04em] text-gold-300 [text-wrap:balance]">
             {title}
           </span>

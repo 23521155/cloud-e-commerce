@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { CSSProperties } from "react";
+import { BookOpener } from "@/components/catalogue/BookOpener";
 import { MotionController } from "@/components/motion/MotionController";
 import { Preloader } from "@/components/motion/Preloader";
 import { BookCover, BookPhoto, OpenBook, SpineStack } from "@/components/ui/BookArt";
@@ -202,6 +203,8 @@ export default async function Home() {
           {newBooks.map((book, i) => (
             <li key={book.slug}>
               <div data-speed={[0.12, 0.06, 0][i % 3]}>
+                {/* Same as the catalogue: a click flies the book onto its page, a tap opens it on its introduction */}
+                <BookOpener book={book}>
                 <Link href={`/books/${book.slug}`} className="work-card" data-reveal="fade">
                   <div className="work-card__media">
                     <BookPhoto title={book.title} author={book.author} color={book.color} />
@@ -218,6 +221,7 @@ export default async function Home() {
                     <p className="m-0 mt-3 font-serif text-xl tabular-nums text-parchment-100">{price.format(book.price)}</p>
                   </div>
                 </Link>
+                </BookOpener>
               </div>
             </li>
           ))}

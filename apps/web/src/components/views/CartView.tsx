@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { BasketSkeleton } from "@/components/basket/BasketSkeleton";
 import { Basket } from "@/components/cart/Basket";
+import { BookOpener } from "@/components/catalogue/BookOpener";
 import { MotionController } from "@/components/motion/MotionController";
 import { BookPhoto } from "@/components/ui/BookArt";
 import { DotButton } from "@/components/ui/DotButton";
@@ -94,6 +95,7 @@ export function CartView({ shelf }: { shelf: Book[] }) {
         <ul className="catalogue__grid book__related m-0 list-none p-0">
           {more.map((b) => (
             <li key={b.slug}>
+              <BookOpener book={b}>
               <Link href={`/books/${b.slug}`} className="work-card" data-reveal="fade">
                 <div className="work-card__media">
                   <BookPhoto title={b.title} author={b.author} color={b.color} />
@@ -106,6 +108,7 @@ export function CartView({ shelf }: { shelf: Book[] }) {
                   <p className="m-0 mt-3 font-serif text-xl tabular-nums text-parchment-100">{price.format(b.price)}</p>
                 </div>
               </Link>
+              </BookOpener>
             </li>
           ))}
         </ul>
