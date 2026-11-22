@@ -17,6 +17,7 @@ import (
 	"github.com/fizzisme/catalog-service/internal/logger"
 	"github.com/fizzisme/catalog-service/internal/router"
 	"github.com/fizzisme/catalog-service/internal/subject"
+	"github.com/fizzisme/catalog-service/internal/sell"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )
@@ -62,7 +63,11 @@ func main() {
 	bookHandler := book.NewHandler(book.NewService(bookRepo))
 	subjectHandler := subject.NewHandler(subject.NewRepository(db))
 
-	r := router.SetupRouter(db, bookHandler, subjectHandler)
+	sellRepo := sell.NewRepository(db)
+	sellService := sell.NewService(sellRepo)
+	sellHandler := sell.NewHandler(sellService)
+
+	r := router.SetupRouter(db, bookHandler, subjectHandler, sellHandler)
 
 	srv := &http.Server{
 		Addr:    ":" + cfg.Port,

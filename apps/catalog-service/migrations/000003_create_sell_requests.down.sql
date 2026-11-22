@@ -1,0 +1,1 @@
+DROP TABLE sell_requests;
