@@ -12,7 +12,20 @@ export const GATEWAY_URL = (process.env.GATEWAY_API_URL ?? "http://localhost:808
  */
 export async function forwardedFor(): Promise<Record<string, string>> {
     const value = (await headers()).get("x-forwarded-for");
-    return value ? { "X-Forwarded-For": value } : {};    
+    return value ? { "X-Forwarded-For": withoutPorts(value) } : {};
+}
+
+function withoutPorts(forwarded: string): string {
+  return forwarded
+    .split(",")
+    .map((hop) => {
+      const entry = hop.trim();
+      const v6 = entry.match(/^\[([^\]]+)\](?::\d+)?$/);
+      if (v6) return v6[1];
+      const v4 = entry.match(/^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/);
+      return v4 ? v4[1] : entry;
+    })
+    .join(", ");
 }
 /**
  * Who is browsing, for calls that start or renew a session: the visitor's IP as above, and their
@@ -23,7 +36,7 @@ export function visitorHeadersFrom(request: Headers): Record<string, string> {
   const out: Record<string, string> = {};
   const forwarded = request.get("x-forwarded-for");
   const agent = request.get("user-agent");
-  if (forwarded) out["X-Forwarded-For"] = forwarded;
+  if (forwarded) out["X-Forwarded-For"] = withoutPorts(forwarded);
   if (agent) out["User-Agent"] = agent;
   return out;
 }
