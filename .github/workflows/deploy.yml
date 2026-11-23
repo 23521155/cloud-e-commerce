@@ -1,7 +1,7 @@
 name: Deploy
 
 # Push to develop deploys to the regions in the repo variable AZURE_REGIONS
-# (default: japaneast). Run it by hand to pick another region or to force a full infra deploy.
+# (default: koreacentral). Run it by hand to pick another region or to force a full infra deploy.
 on:
   push:
     branches: [develop]
@@ -20,8 +20,8 @@ on:
       regions:
         description: 'Regions to deploy'
         type: choice
-        options: [japaneast, koreacentral, both]
-        default: japaneast
+        options: [koreacentral, eastasia, both]
+        default: koreacentral
       infra:
         description: 'Run the Bicep deployment even if the apps already exist'
         type: boolean
@@ -37,7 +37,7 @@ permissions:
 
 env:
   PREFIX: marginalleya
-  SERVICES: 'api-gateway catalog-service order-service user-service web'
+  SERVICES: 'api-gateway catalog-service order-service user-service'
 
 jobs:
   plan:
@@ -48,13 +48,13 @@ jobs:
       - id: m
         shell: bash
         run: |
-          choice="${{ inputs.regions || vars.AZURE_REGIONS || 'japaneast' }}"
-          jp='{"location":"japaneast","rg":"rg-marginalleya-jp","sqlFreeOffer":false}'
+          choice="${{ inputs.regions || vars.AZURE_REGIONS || 'koreacentral' }}"
           kr='{"location":"koreacentral","rg":"rg-marginalleya-kr","sqlFreeOffer":true}'
+          ea='{"location":"eastasia","rg":"rg-marginalleya-ea","sqlFreeOffer":false}'
           case "$choice" in
-            both) include="$kr,$jp" ;;
-            koreacentral) include="$kr" ;;
-            *) include="$jp" ;;
+            both) include="$kr,$ea" ;;
+            eastasia) include="$ea" ;;
+            *) include="$kr" ;;
           esac
           echo "matrix={\"include\":[$include]}" >> "$GITHUB_OUTPUT"
 
@@ -142,6 +142,24 @@ jobs:
             docker push "$image:$TAG"
           done
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            apps/web/package-lock.json
+            apps/functions/package-lock.json
+
+      - name: Package the web app
+        working-directory: apps/web
+        run: |
+          npm ci
+          npm run build
+          cp -r .next/static .next/standalone/.next/static
+          cp -r public .next/standalone/public
+          cd .next/standalone
+          zip -qr "$RUNNER_TEMP/web.zip" .
+
       - name: Re-login to Azure after the image build
         uses: azure/login@v2
         with:
@@ -226,12 +244,6 @@ jobs:
 
       # The sendEmail Function runs on the Flex Consumption plan, which takes a zip package rather
       # than an image: the compiled code, host.json and the production node_modules.
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: apps/functions/package-lock.json
-
       - name: Package the Function
         working-directory: apps/functions
         run: |
@@ -254,11 +266,32 @@ jobs:
           az functionapp deployment source config-zip -g "${{ matrix.rg }}" -n "$app" --src "$RUNNER_TEMP/functions.zip" -o none
           echo "function: $app" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Re-login to Azure before the web app deploy
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy the web app to the staging slot
+        id: webapp
+        shell: bash
+        run: |
+          app=$(az webapp list -g "${{ matrix.rg }}" --query "[0].name" -o tsv)
+          az webapp deploy -g "${{ matrix.rg }}" -n "$app" --slot staging --src-path "$RUNNER_TEMP/web.zip" --type zip -o none
+          staging=$(az webapp show -g "${{ matrix.rg }}" -n "$app" --slot staging --query defaultHostName -o tsv)
+          curl --fail --retry 10 --retry-delay 10 --retry-all-errors -sS -o /dev/null "https://$staging/"
+          echo "app=$app" >> "$GITHUB_OUTPUT"
+
+      - name: Swap staging into production
+        run: |
+          az webapp deployment slot swap -g "${{ matrix.rg }}" -n "${{ steps.webapp.outputs.app }}" --slot staging --target-slot production
+
       - name: Smoke test
         shell: bash
         run: |
           gw=$(az containerapp show -g "${{ matrix.rg }}" -n api-gateway --query properties.configuration.ingress.fqdn -o tsv)
-          web=$(az containerapp show -g "${{ matrix.rg }}" -n web --query properties.configuration.ingress.fqdn -o tsv)
+          web=$(az webapp show -g "${{ matrix.rg }}" -n "${{ steps.webapp.outputs.app }}" --query defaultHostName -o tsv)
           # Apps may be scaled to zero, so allow for a cold start.
           curl --fail --retry 10 --retry-delay 10 --retry-all-errors -sS "https://$gw/health"
           # Through the gateway to user-service, which also checks its database.
