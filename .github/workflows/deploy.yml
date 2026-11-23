@@ -1,10 +1,10 @@
 name: Deploy
 
-# Push to develop deploys to the regions in the repo variable AZURE_REGIONS
+# Push to main deploys to the regions in the repo variable AZURE_REGIONS
 # (default: koreacentral). Run it by hand to pick another region or to force a full infra deploy.
 on:
   push:
-    branches: [develop]
+    branches: [main]
     paths:
       - 'apps/api-gateway/**'
       - 'apps/catalog-service/**'
