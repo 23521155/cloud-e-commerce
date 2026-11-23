@@ -1,13 +1,13 @@
 // Entry point: deploys the whole stack into one resource group.
-// Switch region by passing a different location, e.g. -p location=japaneast.
+// Switch region by passing a different location, e.g. -p location=eastasia.
 
 @description('Azure region for every resource. Must be in the subscription\'s allowed list.')
 @allowed([
-  'malaysiawest'
-  'indonesiacentral'
-  'indiasouthcentral'
   'koreacentral'
-  'japaneast'
+  'malaysiawest'
+  'indiasouthcentral'
+  'uaenorth'
+  'eastasia'
 ])
 param location string = 'koreacentral'
 
@@ -75,7 +75,7 @@ module network 'modules/network.bicep' = {
   }
 }
 
-@description('Use the Azure SQL free offer (false in regions where it fails, e.g. japaneast).')
+@description('Use the Azure SQL free offer (false in regions where it fails).')
 param sqlFreeOffer bool = true
 
 module sql 'modules/sql.bicep' = {
@@ -114,8 +114,10 @@ param imageTag string = 'v1'
 @description('Replicas each app keeps when idle. 0 = scale to zero; set 1 while measuring to avoid cold starts.')
 param minReplicas int = 0
 
-@description('The shop\'s own domain (e.g. marginalleya.me), served with www. by the web app with free managed certificates. Empty: only the *.azurecontainerapps.io address. See containerapps.bicep for the DNS records it needs first.')
+@description('The shop\'s own domain (e.g. marginalleya.me), served with www. by the web app. Empty: only the *.azurewebsites.net address.')
 param customDomain string = ''
+
+param webSku string = 'P0v3'
 
 module redis 'modules/redis.bicep' = {
   name: 'redis'
@@ -142,9 +144,21 @@ module communication 'modules/communication.bicep' = {
   }
 }
 
+module webApp 'modules/appservice.bicep' = if (deployApps) {
+  name: 'appservice'
+  params: {
+    location: location
+    prefix: prefix
+    suffix: suffix
+    skuName: webSku
+  }
+}
+
 module containerApps 'modules/containerapps.bicep' = if(deployApps) {
   name: 'containerapps'
   params: {
+    webHostName: webApp!.outputs.hostName
+    webOutboundIps: webApp!.outputs.outboundIps
     location: location
     prefix: prefix
     suffix: suffix
@@ -165,9 +179,17 @@ module containerApps 'modules/containerapps.bicep' = if(deployApps) {
     sepayAccountNo: sepayAccountNo
     sepayAccountName: sepayAccountName
     imageTag: imageTag
-    redisName: redis.outputs.name
     storageAccountName: storage.outputs.name
     customDomain: customDomain
+  }
+}
+
+module webAppSettings 'modules/appservice-settings.bicep' = if (deployApps) {
+  name: 'appservice-settings'
+  params: {
+    siteName: webApp!.outputs.name
+    gatewayUrl: containerApps!.outputs.gatewayUrl
+    redisName: redis.outputs.name
   }
 }
 
@@ -189,6 +211,7 @@ module functions 'modules/functions.bicep' = {
 output registryName string = registry.outputs.name
 output registryLoginServer string = registry.outputs.loginServer
 output sqlServerFqdn string = sql.outputs.serverFqdn
-output webUrl string = containerApps.?outputs.webUrl ?? ''
+output webAppName string = webApp.?outputs.name ?? ''
+output webUrl string = deployApps ? 'https://${webApp!.outputs.hostName}' : ''
 output gatewayUrl string = containerApps.?outputs.gatewayUrl ?? ''
 output functionAppName string = functions.outputs.name

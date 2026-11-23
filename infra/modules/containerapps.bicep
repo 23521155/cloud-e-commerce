@@ -57,23 +57,18 @@ param sepayAccountName string = ''
 @description('Storage account whose queues carry emails and account events.')
 param storageAccountName string
 
-@description('Azure Managed Redis that holds the web app\'s shared data cache.')
-param redisName string
-
 @description('Replicas kept running when idle. 0 scales to zero (free, but the first request waits for a cold start).')
 param minReplicas int = 0
 
 @description('Upper bound for horizontal scaling.')
 param maxReplicas int = 3
 
-// Before the first deploy with a domain, its DNS must point here and the environment must hold the
-// certificates (a managed certificate is only issued for a hostname already on the app):
-//   A     @          -> the environment's static IP      TXT asuid     -> web's customDomainVerificationId
-//   CNAME www        -> web's *.azurecontainerapps.io    TXT asuid.www -> the same id
-// then once per environment: az containerapp hostname add, and az containerapp env certificate create
-// with the names below (mc-<host with dashes>). Later deploys keep them.
 @description('The shop\'s own domain; www. is served too. Empty: no custom domain.')
 param customDomain string = ''
+
+param webHostName string
+
+param webOutboundIps string
 
 var acrLoginServer = '${registryName}.azurecr.io'
 
@@ -100,19 +95,6 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' existing 
 
 // The queues' connection string, for the outbox relay and the order-service consumer.
 var storageConnectionString = 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${storageAccount.listKeys().keys[0].value};EndpointSuffix=${az.environment().suffixes.storage}'
-
-resource redis 'Microsoft.Cache/redisEnterprise@2025-07-01' existing = {
-  name: redisName
-}
-
-resource redisDatabase 'Microsoft.Cache/redisEnterprise/databases@2025-07-01' existing = {
-  parent: redis
-  name: 'default'
-}
-
-// rediss:// is Redis over TLS; the access key is the password.
-var redisUrl = 'rediss://:${redisDatabase.listKeys().primaryKey}@${redis.properties.hostName}:10000'
-
 
 // One identity shared by every app, granted AcrPull before any app is created,
 // so the very first revision can already pull its image.
@@ -186,25 +168,6 @@ var scale = {
   ]
 }
 
-// The web app renders every page (Next.js SSR), so it scales sooner and further than the Go services:
-// load tests showed 0.5 vCPU saturated at 100 shoppers, and 50 requests per replica scaled out too late.
-var webScale = {
-  minReplicas: minReplicas
-  maxReplicas: 5
-  rules: [
-    {
-      name: 'http'
-      http: {
-        metadata: {
-          concurrentRequests: '10'
-        }
-      }
-    }
-  ]
-}
-
-
-
 var goResources = {
   cpu: json('0.25')
   memory: '0.5Gi'
@@ -264,68 +227,8 @@ resource catalog 'Microsoft.App/containerApps@2024-03-01' = {
   }
 }
 
-// The apex is validated over HTTP (it has an A record, not a CNAME), www by its CNAME.
-var webHostnames = empty(customDomain) ? [] : [customDomain, 'www.${customDomain}']
-
-resource webCertificates 'Microsoft.App/managedEnvironments/managedCertificates@2024-03-01' = [for host in webHostnames: {
-  parent: environment
-  name: 'mc-${replace(host, '.', '-')}'
-  location: location
-  properties: {
-    subjectName: host
-    domainControlValidation: host == customDomain ? 'HTTP' : 'CNAME'
-  }
-}]
-
 // The address in emails and the Google callback: the own domain once there is one.
-var webUrl = empty(customDomain) ? 'https://${web.properties.configuration.ingress.fqdn}' : 'https://${customDomain}'
-
-resource web 'Microsoft.App/containerApps@2024-03-01' = {
-  name: 'web'
-  location: location
-  identity: identity
-  dependsOn: [
-    acrPull
-  ]
-  properties: {
-    environmentId: environment.id
-    workloadProfileName: 'Consumption'
-    configuration: {
-      registries: registries
-      secrets: [
-        { name: 'redis-url', value: redisUrl }
-      ]
-      ingress: {
-        external: true
-        targetPort: 3000
-        transport: 'auto'
-        customDomains: [for (host, i) in webHostnames: {
-          name: host
-          bindingType: 'SniEnabled'
-          certificateId: webCertificates[i].id
-        }]
-      }
-    }
-    template: {
-      containers: [
-        {
-          name: 'web'
-          image: '${acrLoginServer}/web:${imageTag}'
-          resources: {
-            cpu: json('1')
-            memory: '2Gi'
-          }
-          env: [
-            // Read on the server only, so it can use the internal name.
-            { name: 'GATEWAY_API_URL', value: 'http://api-gateway' }
-            { name: 'REDIS_URL', secretRef: 'redis-url' }
-          ]
-        }
-      ]
-      scale: webScale
-    }
-  }
-}
+var webUrl = empty(customDomain) ? 'https://${webHostName}' : 'https://${customDomain}'
 
 // A Container App secret cannot be empty, and the service wants all four SePay settings or none.
 var sepayEnabled = !empty(sepayApiKey) && !empty(sepayAccountNo) && !empty(sepayAccountName)
@@ -374,7 +277,7 @@ resource order 'Microsoft.App/containerApps@2024-03-01' = {
             // Online payment stays off until the VNPay sandbox keys are added.
             { name: 'VNPAY_TMN_CODE', value: '' }
             { name: 'VNPAY_HASH_SECRET', value: '' }
-            { name: 'VNPAY_RETURN_URL', value: 'https://${web.properties.configuration.ingress.fqdn}/checkout/vnpay-return' }
+            { name: 'VNPAY_RETURN_URL', value: 'https://${webHostName}/checkout/vnpay-return' }
             { name: 'VNPAY_CONFIRM_ON_RETURN', value: 'false' }
             // Reads user-email-verified: guest orders join the account whose email was confirmed.
             { name: 'STORAGE_CONNECTION_STRING', secretRef: 'storage-connection-string' }
@@ -495,7 +398,7 @@ resource gateway 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'ORDER_SERVICE', value: 'http://${order.name}' }
             // Ranges Container Apps reserves for its own ingress and container network (workload profiles),
             // per learn.microsoft.com/azure/container-apps/custom-virtual-networks, plus the app subnet.
-            { name: 'TRUSTED_PROXIES', value: '100.100.0.0/17,100.100.128.0/19,100.100.160.0/19,100.100.192.0/19,10.20.0.0/24' }
+            { name: 'TRUSTED_PROXIES', value: '100.100.0.0/17,100.100.128.0/19,100.100.160.0/19,100.100.192.0/19,10.20.0.0/24,${webOutboundIps}' }
           ]
         }
       ]
@@ -504,5 +407,4 @@ resource gateway 'Microsoft.App/containerApps@2024-03-01' = {
   }
 }
 
-output webUrl string = 'https://${web.properties.configuration.ingress.fqdn}'
 output gatewayUrl string = 'https://${gateway.properties.configuration.ingress.fqdn}'
