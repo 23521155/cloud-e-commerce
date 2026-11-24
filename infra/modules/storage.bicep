@@ -13,6 +13,11 @@ param name string
 var queueNames = [
   'email-outbox'
   'user-email-verified'
+  'sell-photo-events'
+]
+
+var containerNames = [
+  'sell-photos'
 ]
 
 resource account 'Microsoft.Storage/storageAccounts@2023-05-01' = {
@@ -37,6 +42,16 @@ resource queueService 'Microsoft.Storage/storageAccounts/queueServices@2023-05-0
 resource queues 'Microsoft.Storage/storageAccounts/queueServices/queues@2023-05-01' = [for q in queueNames: {
   parent: queueService
   name: q
+}]
+
+resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
+  parent: account
+  name: 'default'
+}
+
+resource containers 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = [for c in containerNames: {
+  parent: blobService
+  name: c
 }]
 
 output name string = account.name

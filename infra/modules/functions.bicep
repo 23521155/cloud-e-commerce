@@ -22,6 +22,11 @@ param emailSender string
 @description('Application Insights connection string: the Function\'s runs show up there.')
 param appInsightsConnectionString string
 
+param subnetId string
+
+@secure()
+param catalogSqlConnectionString string
+
 // Where Flex Consumption keeps the deployed zip.
 var deploymentContainerName = 'app-package-sendemail'
 
@@ -29,7 +34,7 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' existing 
   name: storageAccountName
 }
 
-resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
+resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' existing = {
   parent: storageAccount
   name: 'default'
 }
@@ -65,6 +70,7 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
   properties: {
     serverFarmId: plan.id
     httpsOnly: true
+    virtualNetworkSubnetId: subnetId
     functionAppConfig: {
       deployment: {
         storage: {
@@ -96,6 +102,8 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsightsConnectionString }
         { name: 'ACS_CONNECTION_STRING', value: communication.listKeys().primaryConnectionString }
         { name: 'EMAIL_SENDER', value: emailSender }
+        { name: 'CatalogSqlConnectionString', value: catalogSqlConnectionString }
+        { name: 'SELL_PHOTOS_CONTAINER', value: 'sell-photos' }
       ]
     }
   }

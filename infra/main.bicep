@@ -91,6 +91,7 @@ module sql 'modules/sql.bicep' = {
     adminLogin: sqlAdminLogin
     adminPassword: sqlAdminPassword
     appsSubnetId: network.outputs.appsSubnetId
+    functionsSubnetId: network.outputs.functionsSubnetId
     clientIp: clientIp
     useFreeOffer: sqlFreeOffer
   }
@@ -205,6 +206,16 @@ module functions 'modules/functions.bicep' = {
     communicationServiceName: communication.outputs.communicationServiceName
     emailSender: communication.outputs.senderAddress
     appInsightsConnectionString: monitoring.outputs.appInsightsConnectionString
+    subnetId: network.outputs.functionsSubnetId
+    catalogSqlConnectionString: 'Server=tcp:${sql.outputs.serverFqdn},1433;Database=catalog;User ID=${sqlAdminLogin};Password=${sqlAdminPassword};Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;'
+  }
+}
+
+module eventGrid 'modules/eventgrid.bicep' = {
+  name: 'eventgrid'
+  params: {
+    location: location
+    storageAccountName: storage.outputs.name
   }
 }
 

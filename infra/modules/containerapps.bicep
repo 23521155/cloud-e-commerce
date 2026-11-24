@@ -191,6 +191,7 @@ resource catalog 'Microsoft.App/containerApps@2024-03-01' = {
         #disable-next-line use-secure-value-for-secure-inputs // built from the secure sqlAdminPassword
         { name: 'database-url', value: catalogDbUrl }
         { name: 'internal-token', value: internalToken }
+        { name: 'storage-connection-string', value: storageConnectionString }
       ]
       ingress: {
         external: false // internal only: the gateway and the order service call it
@@ -219,6 +220,7 @@ resource catalog 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'GIN_MODE', value: 'release' }
             { name: 'DATABASE_URL', secretRef: 'database-url' }
             { name: 'INTERNAL_TOKEN', secretRef: 'internal-token' }
+            { name: 'STORAGE_CONNECTION_STRING', secretRef: 'storage-connection-string' }
           ]
         }
       ]
