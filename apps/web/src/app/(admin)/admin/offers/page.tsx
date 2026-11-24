@@ -22,8 +22,8 @@ export default async function AdminOffersPage({ searchParams }: PageProps<"/admi
   const state = STATES.find((s) => s.key === first(sp.state))?.key;
   const q = (first(sp.q) ?? "").trim().slice(0, 80);
 
-  const total = getOffers().length;
-  const offers = getOffers({ q, state });
+  const [all, offers] = await Promise.all([getOffers(), getOffers({ q, state })]);
+  const total = all.length;
 
   const href = (next: { state?: OfferFilter | null; q?: string }) => {
     const params = new URLSearchParams();
@@ -90,7 +90,16 @@ export default async function AdminOffersPage({ searchParams }: PageProps<"/admi
                   </td>
                   <td>
                     {o.grade}
-                    <span className="admin__sub">{o.photos ? `${o.photos} ${o.photos === 1 ? "photo" : "photos"}` : "No photos"}</span>
+                    <span className="admin__sub">{o.photos.length ? `${o.photos.length} ${o.photos.length === 1 ? "photo" : "photos"}` : "No photos"}</span>
+                    {o.photos.length > 0 && (
+                      <span className="admin__photos">
+                        {o.photos.map((p) => (
+                          <a key={p.position} href={`/admin/offers/photos/${o.requestId}/${p.position}`} target="_blank" rel="noreferrer">
+                            <img src={`/admin/offers/photos/${o.requestId}/${p.position}`} alt={`Photo ${p.position} of ${o.title}`} width={56} height={56} loading="lazy" />
+                          </a>
+                        ))}
+                      </span>
+                    )}
                   </td>
                   <td className="admin__faults">{o.faults}</td>
                   <td className="is-num">{o.asking ? price.format(o.asking) : "—"}</td>

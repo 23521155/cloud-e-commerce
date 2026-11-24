@@ -56,13 +56,13 @@ function PhotoField() {
         Photos
       </span>
       <label className="sell__file">
-        <input name="photos" type="file" accept="image/*" multiple className="sr-only" aria-labelledby="photos-label" onChange={(e) => setCount(e.currentTarget.files?.length ?? 0)} />
+        <input name="photos" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple className="sr-only" aria-labelledby="photos-label" onChange={(e) => setCount(e.currentTarget.files?.length ?? 0)} />
         <span className="sell__file-btn small-upper">Choose photos</span>
         <span className="sell__file-status" aria-live="polite">
           {count === 0 ? "No photos chosen" : `${count} ${count === 1 ? "photo" : "photos"} chosen`}
         </span>
       </label>
-      <span className="co__hint">Optional. The cover, the spine and any damage help most.</span>
+      <span className="co__hint">Optional, up to 5 photos of 5 MB each. The cover, the spine and any damage help most.</span>
     </div>
   );
 }
@@ -101,7 +101,7 @@ function Steps() {
 }
 
 /** Sell-to-us: the seller describes one copy and leaves contact details; the shop replies with an offer. */
-export function Sell({ action, sent }: { action: (formData: FormData) => Promise<void>; sent: boolean }) {
+export function Sell({ action, sent, error }: { action: (formData: FormData) => Promise<void>; sent: boolean; error?: string }) {
   return (
     <div className="sell__layout">
       <div className="sell__aside">
@@ -126,6 +126,11 @@ export function Sell({ action, sent }: { action: (formData: FormData) => Promise
         </section>
       ) : (
         <form action={action} className="co">
+          {error && (
+            <p role="alert" className="auth__error m-0">
+              {error}
+            </p>
+          )}
           <Card title="The book" note="One copy per form">
             <Field label="Title" name="title" required className="co__full" />
             <Field label="Author" name="author" required />

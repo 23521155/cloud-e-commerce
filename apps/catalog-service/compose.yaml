@@ -88,6 +88,7 @@ services:
       GRPC_PORT: "9083"
       # Shared with the order service; dev default only.
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-dev-internal-token}
+      STORAGE_CONNECTION_STRING: DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;
     ports:
       - "${CATALOG_PORT:-8083}:8083"
       - "${CATALOG_GRPC_PORT:-9083}:9083"

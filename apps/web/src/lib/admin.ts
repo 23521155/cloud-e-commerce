@@ -3,6 +3,7 @@
 // Names are unaccented: the display face does not render Vietnamese diacritics reliably.
 import { MOCK_READER_ORDERS, orderTotal, withBooks, type Order, type OrderStatus } from "@/lib/orders";
 import { PAYMENT_METHODS, type PaymentMethodId } from "@/lib/payment";
+import { listSellRequests, type SellPhoto, type SellRequest } from "@/lib/sell-api";
 
 export type Person = { name: string; email: string };
 
@@ -51,6 +52,7 @@ export { orderTotal };
 
 export type Offer = {
   id: string;
+  requestId: number;
   /** ISO date the seller sent it */
   received: string;
   seller: Person;
@@ -61,23 +63,39 @@ export type Offer = {
   faults: string;
   /** VND, when the seller named a price */
   asking?: number;
-  photos: number;
+  photos: SellPhoto[];
   answered: boolean;
 };
 
-const OFFERS: Offer[] = [
-  { id: "OF-0059", received: "2026-10-07", seller: { name: "Dang Khoa", email: "khoa.dang@example.com" }, title: "The Old Man and the Sea", author: "Ernest Hemingway", binding: "Paperback", grade: "Good", faults: "Cover creased, spine faded by the sun.", photos: 2, answered: false },
-  { id: "OF-0058", received: "2026-10-06", seller: { name: "Bui Thanh Tam", email: "tam.bui@example.com" }, title: "Rebecca", author: "Daphne du Maurier", binding: "Hardcover", grade: "Good", faults: "Jacket torn at the spine head, light foxing on the endpapers.", asking: 900000, photos: 3, answered: false },
-  { id: "OF-0057", received: "2026-10-05", seller: { name: "Vo Ngoc Mai", email: "mai.vo@example.com" }, title: "The Good Earth", author: "Pearl S. Buck", binding: "Hardcover", grade: "Fair", faults: "No jacket, a previous owner's name in ink on the flyleaf.", photos: 1, answered: false },
-  { id: "OF-0055", received: "2026-10-02", seller: { name: "Hoang Lan", email: "lan.hoang@example.com" }, title: "Anne of Green Gables", author: "L. M. Montgomery", binding: "Paperback", grade: "Very good", faults: "None I can see.", asking: 150000, photos: 0, answered: true },
-];
-
 export type OfferFilter = "new" | "answered";
 
+const offerRef = (id: number) => `OF-${String(id).padStart(4, "0")}`;
+
+function toOffer(r: SellRequest): Offer {
+  return {
+    id: offerRef(r.id),
+    requestId: r.id,
+    received: r.createdAt,
+    seller: { name: r.sellerName, email: r.sellerEmail },
+    title: r.title,
+    author: r.author,
+    binding: r.binding,
+    grade: r.grade,
+    faults: r.faults,
+    asking: r.askingPriceVnd ?? undefined,
+    photos: r.photos,
+    answered: r.status !== "PENDING_REVIEW",
+  };
+}
+
+async function allOffers(): Promise<Offer[]> {
+  return ((await listSellRequests()) ?? []).map(toOffer);
+}
+
 /** Newest first. Search by reference, seller, title or author; optionally only new or answered. */
-export function getOffers({ q = "", state }: { q?: string; state?: OfferFilter } = {}): Offer[] {
+export async function getOffers({ q = "", state }: { q?: string; state?: OfferFilter } = {}): Promise<Offer[]> {
   const needle = q.trim().toLowerCase();
-  return OFFERS.filter(
+  return (await allOffers()).filter(
     (f) =>
       (!state || (state === "new") !== f.answered) &&
       (!needle || [f.id, f.seller.name, f.seller.email, f.title, f.author].some((s) => s.toLowerCase().includes(needle))),
@@ -96,7 +114,7 @@ export async function getTasks(): Promise<Task[]> {
     if (o.status === "paid" || (o.status === "placed" && o.payment === "cod")) tasks.push({ ...base, what: `Pack ${copies(o.books.length)}` });
     if (o.status === "packed") tasks.push({ ...base, what: `Hand ${copies(o.books.length)} to the courier` });
   }
-  for (const f of OFFERS) {
+  for (const f of await allOffers()) {
     if (!f.answered) tasks.push({ ref: f.id, kind: "offer", who: f.seller.name, what: `Reply with an offer for “${f.title}”`, since: f.received, href: `/admin/offers?q=${f.id}` });
   }
   return tasks.sort((a, b) => a.since.localeCompare(b.since));
@@ -135,7 +153,7 @@ export async function paymentChart() {
 
 /** Overview counts: where orders stand and how many offers wait. */
 export async function overviewCounts() {
-  const orders = await getShopOrders();
+  const [orders, offers] = await Promise.all([getShopOrders(), allOffers()]);
   const count = (fn: (o: ShopOrder) => boolean) => orders.filter(fn).length;
   return {
     orders: [
@@ -145,7 +163,7 @@ export async function overviewCounts() {
       { label: "With the courier", count: count((o) => o.status === "shipped") },
     ],
     totalOrders: orders.length,
-    newOffers: OFFERS.filter((f) => !f.answered).length,
-    answeredOffers: OFFERS.filter((f) => f.answered).length,
+    newOffers: offers.filter((f) => !f.answered).length,
+    answeredOffers: offers.filter((f) => f.answered).length,
   };
 }

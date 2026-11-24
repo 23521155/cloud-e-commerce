@@ -15,6 +15,8 @@ param adminPassword string
 @description('Subnet allowed to connect (the App Service apps).')
 param appsSubnetId string
 
+param functionsSubnetId string = ''
+
 @description('Use the Azure SQL free offer. false where the offer fails or is used up: same serverless compute, billed per vCore-second.')
 param useFreeOffer bool = true
 
@@ -39,6 +41,14 @@ resource fromAppSubnet 'Microsoft.Sql/servers/virtualNetworkRules@2023-08-01' = 
   name: 'from-app-subnet'
   properties: {
     virtualNetworkSubnetId: appsSubnetId
+  }
+}
+
+resource fromFunctionsSubnet 'Microsoft.Sql/servers/virtualNetworkRules@2023-08-01' = if (!empty(functionsSubnetId)) {
+  parent: server
+  name: 'from-functions-subnet'
+  properties: {
+    virtualNetworkSubnetId: functionsSubnetId
   }
 }
 

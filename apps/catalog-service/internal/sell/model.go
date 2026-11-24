@@ -26,6 +26,7 @@ type Request struct {
 	Status         string    `db:"status" json:"status"`
 	CreatedAt      time.Time `db:"created_at" json:"createdAt"`
 	UpdatedAt      time.Time `db:"updated_at" json:"updatedAt"`
+	Photos         []Photo   `db:"-" json:"photos"`
 }
 
 // CreateInput uses the existing /sell form field names.

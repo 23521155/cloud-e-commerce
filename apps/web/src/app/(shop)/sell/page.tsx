@@ -2,16 +2,32 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { MotionController } from "@/components/motion/MotionController";
 import { Sell } from "@/components/sell/Sell";
+import { MAX_PHOTO_BYTES, MAX_PHOTOS, photosOf, submitSellRequest } from "@/lib/sell-api";
 
 export const metadata: Metadata = {
   title: "Sell your books — Marginalleya",
   description: "Describe a book you would like to sell and the shop will reply with an offer.",
 };
 
-/** Mock offer request: nothing is stored or sent yet. Details and photos stay in the POST body, never the URL. */
-async function requestOffer() {
+const ERRORS: Record<string, string> = {
+  "too-many": `Send at most ${MAX_PHOTOS} photos.`,
+  "too-large": `Each photo must be under ${MAX_PHOTO_BYTES / 1024 / 1024} MB.`,
+  "not-image": "Photos must be JPEG, PNG, WebP or GIF pictures.",
+  invalid: "Something in the form is not right. Check the required fields and try again.",
+  busy: "Too many offers from here just now. Please wait a minute and try again.",
+  failed: "The offer could not be sent. Please try again in a moment.",
+};
+
+async function requestOffer(formData: FormData) {
   "use server";
-  redirect("/sell?sent=1");
+  const photos = photosOf(formData);
+  if (photos.length > MAX_PHOTOS) redirect("/sell?error=too-many");
+  if (photos.some((p) => p.size > MAX_PHOTO_BYTES)) redirect("/sell?error=too-large");
+
+  const result = await submitSellRequest(formData);
+  if (result.ok) redirect("/sell?sent=1");
+  if (result.reason === "invalid" && result.detail?.includes("image")) redirect("/sell?error=not-image");
+  redirect(`/sell?error=${result.reason}`);
 }
 
 export default async function SellPage({ searchParams }: PageProps<"/sell">) {
@@ -36,7 +52,7 @@ export default async function SellPage({ searchParams }: PageProps<"/sell">) {
           </p>
         </div>
 
-        <Sell action={requestOffer} sent={sp.sent === "1"} />
+        <Sell action={requestOffer} sent={sp.sent === "1"} error={typeof sp.error === "string" ? ERRORS[sp.error] : undefined} />
       </section>
     </>
   );

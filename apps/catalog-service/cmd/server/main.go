@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/fizzisme/catalog-service/internal/blobstore"
 	"github.com/fizzisme/catalog-service/internal/book"
 	"github.com/fizzisme/catalog-service/internal/config"
 	"github.com/fizzisme/catalog-service/internal/database"
@@ -63,8 +64,19 @@ func main() {
 	bookHandler := book.NewHandler(book.NewService(bookRepo))
 	subjectHandler := subject.NewHandler(subject.NewRepository(db))
 
+	var sellPhotos sell.PhotoStore
+	if cfg.StorageConnectionString == "" {
+		logger.Log.Warn("STORAGE_CONNECTION_STRING is not set: sell requests cannot carry photos")
+	} else {
+		store, err := blobstore.New(ctx, cfg.StorageConnectionString, cfg.SellPhotosContainer)
+		if err != nil {
+			logger.Log.Fatal("cannot open photo storage", zap.Error(err))
+		}
+		sellPhotos = store
+	}
+
 	sellRepo := sell.NewRepository(db)
-	sellService := sell.NewService(sellRepo)
+	sellService := sell.NewService(sellRepo, sellPhotos)
 	sellHandler := sell.NewHandler(sellService)
 
 	r := router.SetupRouter(db, bookHandler, subjectHandler, sellHandler)
@@ -73,8 +85,8 @@ func main() {
 		Addr:    ":" + cfg.Port,
 		Handler: r,
 
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
+		ReadTimeout:  60 * time.Second,
+		WriteTimeout: 60 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
 

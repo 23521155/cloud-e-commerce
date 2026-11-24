@@ -34,8 +34,28 @@ resource vnet 'Microsoft.Network/virtualNetworks@2024-05-01' = {
           ]
         }
       }
+      {
+        name: 'functions'
+        properties: {
+          addressPrefix: '10.20.1.0/24'
+          delegations: [
+            {
+              name: 'flexconsumption'
+              properties: {
+                serviceName: 'Microsoft.App/environments'
+              }
+            }
+          ]
+          serviceEndpoints: [
+            {
+              service: 'Microsoft.Sql'
+            }
+          ]
+        }
+      }
     ]
   }
 }
 
 output appsSubnetId string = vnet.properties.subnets[0].id
+output functionsSubnetId string = vnet.properties.subnets[1].id

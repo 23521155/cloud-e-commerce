@@ -7,6 +7,10 @@ const nextConfig: NextConfig = {
   // One data cache for every replica, kept in Redis (see cache-handler.mjs), instead of one per process.
   cacheHandler: path.resolve("cache-handler.mjs"),
   cacheMaxMemorySize: 0,
+  experimental: {
+    serverActions: { bodySizeLimit: "26mb" },
+    proxyClientMaxBodySize: "26mb",
+  },
 };
 
 export default nextConfig;

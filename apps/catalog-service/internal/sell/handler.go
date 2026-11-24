@@ -3,30 +3,86 @@ package sell
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
+	"github.com/fizzisme/catalog-service/internal/blobstore"
 	"github.com/fizzisme/catalog-service/internal/logger"
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 	"go.uber.org/zap"
 )
 
-type creator interface {
-	Create(ctx context.Context, in CreateInput) (Request, error)
+type service interface {
+	Create(ctx context.Context, in CreateInput, uploads []Upload) (Request, error)
+	List(ctx context.Context) ([]Request, error)
+	OpenPhoto(ctx context.Context, requestID int64, position int) (io.ReadCloser, string, int64, error)
 }
 
 type Handler struct {
-	service creator
+	service service
 }
 
-func NewHandler(service creator) *Handler {
+func NewHandler(service service) *Handler {
 	return &Handler{service: service}
 }
 
 func (h *Handler) Register(api *gin.RouterGroup) {
 	// The gateway will strip the /api/sell prefix.
 	api.POST("/requests", h.create)
+	api.GET("/requests", requireStaff, h.list)
+	api.GET("/requests/:id/photos/:position", requireStaff, h.photo)
+}
+
+const headerUserRoles = "X-User-Roles"
+
+func requireStaff(c *gin.Context) {
+	for _, role := range strings.Split(c.GetHeader(headerUserRoles), ",") {
+		if strings.TrimSpace(role) == "staff" {
+			c.Next()
+			return
+		}
+	}
+	c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "staff only"})
+}
+
+func (h *Handler) list(c *gin.Context) {
+	requests, err := h.service.List(c.Request.Context())
+	if err != nil {
+		logger.Log.Error("cannot list sell requests", zap.String("request_id", c.GetHeader("X-Request-ID")), zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	if requests == nil {
+		requests = []Request{}
+	}
+	c.JSON(http.StatusOK, gin.H{"items": requests})
+}
+
+func (h *Handler) photo(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	position, posErr := strconv.Atoi(c.Param("position"))
+	if err != nil || posErr != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "photo not found"})
+		return
+	}
+
+	body, contentType, size, err := h.service.OpenPhoto(c.Request.Context(), id, position)
+	if errors.Is(err, ErrPhotoNotFound) || errors.Is(err, blobstore.ErrNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "photo not found"})
+		return
+	}
+	if err != nil {
+		logger.Log.Error("cannot read sell photo", zap.Int64("sell_request_id", id), zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	defer body.Close()
+
+	c.Header("Cache-Control", "private, max-age=3600")
+	c.DataFromReader(http.StatusOK, size, contentType, body, nil)
 }
 
 func (h *Handler) create(c *gin.Context) {
@@ -37,13 +93,12 @@ func (h *Handler) create(c *gin.Context) {
 		return
 	}
 
-	// Text-only limit until photo storage is implemented.
-	const maxBodyBytes = 64 * 1024
+	const maxBodyBytes = MaxPhotos*MaxPhotoBytes + 64*1024
 	c.Request.Body = http.MaxBytesReader(
 		c.Writer, c.Request.Body, maxBodyBytes,
 	)
 
-	err := c.Request.ParseMultipartForm(maxBodyBytes)
+	err := c.Request.ParseMultipartForm(8 << 20)
 
 	// Clean up temporary files even if parsing failed.
 	if c.Request.MultipartForm != nil {
@@ -67,11 +122,20 @@ func (h *Handler) create(c *gin.Context) {
 
 	form := c.Request.MultipartForm
 
-	// Do not accept photos until they can be stored.
-	if len(form.File) > 0 {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "photo uploads are not available yet",
-		})
+	for key := range form.File {
+		if key != "photos" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "unexpected file field"})
+			return
+		}
+	}
+
+	uploads, err := Uploads(form.File["photos"])
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, ErrPhotoTooLarge) {
+			status = http.StatusRequestEntityTooLarge
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -101,8 +165,8 @@ func (h *Handler) create(c *gin.Context) {
 		return
 	}
 
-	request, err := h.service.Create(c.Request.Context(), in)
-	if errors.Is(err, ErrInvalidInput) {
+	request, err := h.service.Create(c.Request.Context(), in, uploads)
+	if errors.Is(err, ErrInvalidInput) || errors.Is(err, ErrPhotosDisabled) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
 		})
@@ -125,5 +189,6 @@ func (h *Handler) create(c *gin.Context) {
 		"id":        request.ID,
 		"status":    request.Status,
 		"createdAt": request.CreatedAt,
+		"photos":    len(uploads),
 	})
 }
