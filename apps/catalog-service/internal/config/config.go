@@ -22,6 +22,10 @@ type Config struct {
 
 	// GRPCPort is where the gRPC server listens, next to the HTTP Port.
 	GRPCPort string
+
+	StorageConnectionString string
+
+	SellPhotosContainer string
 }
 
 // Load reads environment variables (via a .env file) into a Config.
@@ -43,6 +47,10 @@ func Load() (*Config, error) {
 		InternalToken: os.Getenv("INTERNAL_TOKEN"),
 
 		GRPCPort: getEnv("GRPC_PORT", "9083"),
+
+		StorageConnectionString: os.Getenv("STORAGE_CONNECTION_STRING"),
+
+		SellPhotosContainer: getEnv("SELL_PHOTOS_CONTAINER", "sell-photos"),
 	}
 
 	return cfg, nil

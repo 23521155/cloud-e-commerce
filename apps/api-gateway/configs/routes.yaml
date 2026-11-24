@@ -122,3 +122,28 @@ routes:
       burst: 2
 
     auth_mode: optional
+
+    upload:
+      timeout: 60s
+      max_body_bytes: 26279936
+
+  - name: offers
+    prefix: /api/offers
+    upstream: ${CATALOG_SERVICE}
+
+    timeout: 10s
+
+    retry:
+      attempts: 2
+      base_delay: 200ms
+      max_delay: 1s
+
+    breaker:
+      enabled: true
+
+    rate_limit:
+      requests: 120
+      window: 1m
+      burst: 30
+
+    auth_mode: required
